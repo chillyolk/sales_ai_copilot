@@ -18,15 +18,19 @@
 - 哪些客户余额快没了？
 - 哪些客户逾期应收最高？
 
-系统会调用 MiniMax 模型将问题转换为 SQL，查询本地 CSV 数据源，并生成面向销售的中文分析结论和行动建议。
+系统会先识别用户意图：普通销售沟通类问题直接由大模型生成话术和建议；数据查询类问题会调用 MiniMax 生成 SQL 并查询本地 CSV 数据源；归因诊断类问题会执行多步数据查询和指标拆解，再生成面向销售的诊断报告和行动建议。
 
 ### 核心能力
 
 - 自然语言问数
+- 普通销售对话与拜访话术建议
+- 意图识别与技能路由
 - 销售经营数据分析
 - 客户投放效果诊断
+- 月环比消耗下降客户归因分析
 - 追加预算机会识别
 - 余额、逾期、低效投放等风险发现
+- 类 BI 的 KPI 卡片、标签、图表、表格和行动建议展示
 - SQL 查询明细展示
 - PC 与移动端响应式页面
 - 本地 CSV 数据源自动加载为 SQLite 查询表
@@ -51,10 +55,13 @@
 浏览器前端
   -> /api/chat
 Python 本地后端
-  -> MiniMax 生成 SQL
-  -> SQLite 查询 CSV 数据
-  -> MiniMax 生成分析总结
-  -> 返回前端展示
+  -> 意图识别与技能路由
+     -> general_chat 普通销售对话
+     -> sql_query 数据查询
+     -> attribution_analysis 归因分析
+  -> SQLite 查询 CSV 数据（按需）
+  -> MiniMax 生成话术/总结/诊断报告
+  -> 结构化 blocks 返回前端 BI 化展示
 ```
 
 ### 数据源
@@ -245,15 +252,19 @@ Users can ask business questions in natural language, such as:
 - Which customers are likely to run out of balance?
 - Which customers have the highest overdue receivables?
 
-The application calls MiniMax to convert the question into SQL, queries the local CSV dataset through SQLite, and then asks MiniMax to generate a sales-oriented analysis and action recommendations.
+The application first detects the user's intent. General sales communication questions are answered directly by the model. Data analysis questions are converted into SQL and queried against the local CSV dataset. Attribution diagnosis questions run multi-step metric comparisons before MiniMax generates a sales-oriented diagnostic report and action recommendations.
 
 ### Key Features
 
 - Natural language data analysis
+- General sales conversation and customer visit talking points
+- Intent detection and skill routing
 - Sales performance analysis
 - Customer advertising performance diagnosis
+- Month-over-month spend decline attribution analysis
 - Budget expansion opportunity detection
 - Balance, overdue receivable, and inefficient spending risk discovery
+- BI-like KPI cards, tags, charts, tables, and action recommendations
 - SQL query details display
 - Responsive UI for desktop and mobile
 - Local CSV automatically loaded into SQLite
@@ -278,10 +289,13 @@ Architecture:
 Browser frontend
   -> /api/chat
 Local Python backend
-  -> MiniMax generates SQL
-  -> SQLite queries CSV data
-  -> MiniMax summarizes query results
-  -> Response rendered in frontend
+  -> intent detection and skill routing
+     -> general_chat
+     -> sql_query
+     -> attribution_analysis
+  -> SQLite queries CSV data when needed
+  -> MiniMax generates talking points, summaries, or diagnosis reports
+  -> structured blocks rendered as BI-like cards in frontend
 ```
 
 ### Dataset

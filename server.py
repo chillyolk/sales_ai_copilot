@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 CSV_PATH = BASE_DIR / "ads_auto_commercial_mock_20260101_20260531.csv"
@@ -18,7 +18,7 @@ HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 MINIMAX_API_URL = os.getenv("MINIMAX_API_URL", "")
-MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "minimax2.7")
+MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M2")
 
 NUMERIC_COLUMNS = {
     "recharge_amount", "cash_recharge_amount", "grant_recharge_amount", "refund_amount",
@@ -249,6 +249,294 @@ SQL：{sql}
     return re.sub(r"<think>.*?</think>", "", answer, flags=re.S).strip()
 
 
+def clean_model_text(text: str) -> str:
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+
+def block_response(
+    *,
+    intent: str,
+    skill: str,
+    answer: str,
+    blocks: list[dict[str, Any]],
+    debug: Optional[dict[str, Any]] = None,
+    sql: str = "",
+    reason: str = "",
+    columns: Optional[list[str]] = None,
+    rows: Optional[list[dict[str, Any]]] = None,
+    fallback: bool = False,
+) -> dict[str, Any]:
+    return {
+        "intent": intent,
+        "skill": skill,
+        "answer": answer,
+        "blocks": blocks,
+        "debug": debug or {},
+        "sql": sql,
+        "reason": reason,
+        "columns": columns or [],
+        "rows": rows or [],
+        "fallback": fallback,
+    }
+
+
+def detect_intent(question: str) -> dict[str, Any]:
+    q = question.lower()
+    diagnosis_keywords = ["归因", "诊断", "原因", "为什么", "环比", "同比", "下降", "下滑", "波动", "拆解"]
+    chat_keywords = ["话术", "怎么说", "怎么聊", "拜访", "沟通", "客户异议", "开场白", "邀约", "谈判", "说服"]
+    query_keywords = ["哪些", "top", "排名", "多少", "查询", "筛选", "余额", "逾期", "回款", "消耗", "roi", "cpl", "线索", "订单"]
+
+    if any(k in question for k in diagnosis_keywords) and any(k in question for k in ["客户", "消耗", "线索", "订单", "roi", "cpl"]):
+        return {"intent": "attribution_analysis", "skill": "attribution_analysis", "requires_data": True, "confidence": 0.9}
+    if any(k in question for k in chat_keywords):
+        return {"intent": "general_chat", "skill": "general_chat", "requires_data": False, "confidence": 0.85}
+    if any(k in q for k in query_keywords):
+        return {"intent": "data_query", "skill": "sql_query", "requires_data": True, "confidence": 0.8}
+    return {"intent": "general_chat", "skill": "general_chat", "requires_data": False, "confidence": 0.55}
+
+
+def general_chat_skill(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
+    if not MINIMAX_API_KEY or not MINIMAX_API_URL:
+        answer = "## 拜访话术建议\n- 先确认客户近期经营目标：本月更关注线索、到店还是成交？\n- 用数据切入：我想帮您复盘最近投放效果，看看哪些预算能带来更高转化。\n- 提出下一步：如果您方便，我可以准备一份客户诊断和优化建议。"
+    else:
+        system = """
+你是汽车广告销售教练，负责帮助销售准备客户拜访、沟通话术、异议处理和行动建议。
+如果用户没有要求查具体数据，不要编造数据；直接给可落地的话术和沟通框架。
+输出要简洁，适合销售直接复制使用。
+""".strip()
+        messages = [{"role": "system", "content": system}]
+        messages.extend(history[-6:] if isinstance(history, list) else [])
+        messages.append({"role": "user", "content": question})
+        answer = clean_model_text(minimax_chat(messages, temperature=0.5))
+    blocks = [
+        {"type": "summary", "title": "销售沟通建议", "content": answer},
+        {"type": "tags", "items": ["不需要查数", "销售话术", "客户沟通"]},
+        {"type": "followups", "items": ["帮我生成一版更强势的商务话术", "如果客户说预算不够，我该怎么回应？", "帮我结合客户投放数据做拜访简报"]},
+    ]
+    return block_response(intent="general_chat", skill="general_chat", answer=answer, blocks=blocks)
+
+
+def table_block(title: str, columns: list[str], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"type": "table", "title": title, "columns": columns, "rows": rows}
+
+
+def sql_query_skill(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
+    if not MINIMAX_API_KEY or not MINIMAX_API_URL:
+        result = local_fallback(question)
+        result.setdefault("intent", "data_query")
+        result.setdefault("skill", "sql_query")
+        result.setdefault("blocks", [
+            {"type": "summary", "title": "查询结论", "content": result.get("answer", "")},
+            table_block("查询结果", result.get("columns", []), result.get("rows", [])),
+        ])
+        result.setdefault("debug", {"sql": result.get("sql", ""), "reason": result.get("reason", "")})
+        return result
+    plan = generate_sql(question, history if isinstance(history, list) else [])
+    sql = add_limit(plan["sql"])
+    columns, rows = execute_sql(sql)
+    answer = summarize(question, sql, plan["reason"], rows)
+    blocks = [
+        {"type": "summary", "title": "查询结论", "content": answer},
+        table_block("查询结果", columns, rows[:100]),
+        {"type": "followups", "items": ["继续分析这些客户的风险", "帮我按销售负责人汇总", "把结果整理成客户跟进清单"]},
+    ]
+    return block_response(
+        intent="data_query",
+        skill="sql_query",
+        answer=answer,
+        blocks=blocks,
+        debug={"sql": sql, "reason": plan["reason"]},
+        sql=sql,
+        reason=plan["reason"],
+        columns=columns,
+        rows=rows,
+    )
+
+
+def get_latest_months() -> tuple[str, str]:
+    rows = DB.execute(f'SELECT DISTINCT stat_month FROM "{TABLE_NAME}" ORDER BY stat_month DESC LIMIT 2').fetchall()
+    if len(rows) < 2:
+        raise ValueError("数据不足，无法做月环比分析")
+    return rows[0][0], rows[1][0]
+
+
+def pct_change(current: float, previous: float) -> Optional[float]:
+    if previous == 0:
+        return None
+    return (current - previous) / previous
+
+
+def format_pct(value: Optional[float]) -> str:
+    if value is None:
+        return "-"
+    return f"{value * 100:.1f}%"
+
+
+def infer_causes(row: dict[str, Any]) -> list[str]:
+    causes = []
+    checks = [
+        ("曝光下滑", row.get("impression_change")),
+        ("点击下滑", row.get("click_change")),
+        ("线索下滑", row.get("lead_change")),
+        ("订单下滑", row.get("order_change")),
+        ("GMV 下滑", row.get("gmv_change")),
+    ]
+    for label, value in checks:
+        if isinstance(value, (int, float)) and value <= -0.2:
+            causes.append(f"{label} {format_pct(value)}")
+    if isinstance(row.get("cpl_change"), (int, float)) and row["cpl_change"] >= 0.2:
+        causes.append(f"CPL 上升 {format_pct(row['cpl_change'])}")
+    if isinstance(row.get("roi_change"), (int, float)) and row["roi_change"] <= -0.2:
+        causes.append(f"ROI 下降 {format_pct(row['roi_change'])}")
+    return causes[:3] or ["消耗下降明显，建议进一步查看产品结构和客户预算变化"]
+
+
+def attribution_analysis_skill(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
+    current_month, previous_month = get_latest_months()
+    sql = f'''
+    WITH monthly AS (
+      SELECT customer_account_id, customer_account_name, sales_name, customer_level, stat_month,
+             SUM(cost_amount) AS cost_amount,
+             SUM(impression_cnt) AS impression_cnt,
+             SUM(click_cnt) AS click_cnt,
+             SUM(lead_cnt) AS lead_cnt,
+             SUM(valid_lead_cnt) AS valid_lead_cnt,
+             SUM(order_cnt) AS order_cnt,
+             SUM(gmv_amount) AS gmv_amount
+      FROM "{TABLE_NAME}"
+      WHERE stat_month IN (?, ?)
+      GROUP BY customer_account_id, customer_account_name, sales_name, customer_level, stat_month
+    )
+    SELECT cur.customer_account_id, cur.customer_account_name, cur.sales_name, cur.customer_level,
+           ROUND(prev.cost_amount, 2) AS previous_cost,
+           ROUND(cur.cost_amount, 2) AS current_cost,
+           ROUND(cur.cost_amount - prev.cost_amount, 2) AS cost_delta,
+           ROUND((cur.cost_amount - prev.cost_amount) / NULLIF(prev.cost_amount, 0), 4) AS cost_change,
+           prev.impression_cnt AS previous_impressions, cur.impression_cnt AS current_impressions,
+           prev.click_cnt AS previous_clicks, cur.click_cnt AS current_clicks,
+           prev.lead_cnt AS previous_leads, cur.lead_cnt AS current_leads,
+           prev.valid_lead_cnt AS previous_valid_leads, cur.valid_lead_cnt AS current_valid_leads,
+           prev.order_cnt AS previous_orders, cur.order_cnt AS current_orders,
+           ROUND(prev.gmv_amount, 2) AS previous_gmv, ROUND(cur.gmv_amount, 2) AS current_gmv,
+           ROUND(prev.cost_amount / NULLIF(prev.lead_cnt, 0), 2) AS previous_cpl,
+           ROUND(cur.cost_amount / NULLIF(cur.lead_cnt, 0), 2) AS current_cpl,
+           ROUND(prev.gmv_amount / NULLIF(prev.cost_amount, 0), 2) AS previous_roi,
+           ROUND(cur.gmv_amount / NULLIF(cur.cost_amount, 0), 2) AS current_roi
+    FROM monthly cur
+    JOIN monthly prev ON cur.customer_account_id = prev.customer_account_id
+    WHERE cur.stat_month = ? AND prev.stat_month = ?
+      AND prev.cost_amount > 0
+      AND (cur.cost_amount - prev.cost_amount) / prev.cost_amount <= -0.2
+    ORDER BY cost_delta ASC
+    LIMIT 30
+    '''
+    rows = [dict(row) for row in DB.execute(sql, (current_month, previous_month, current_month, previous_month)).fetchall()]
+    columns = list(rows[0].keys()) if rows else []
+
+    enriched = []
+    for row in rows:
+        row["impression_change"] = pct_change(float(row["current_impressions"] or 0), float(row["previous_impressions"] or 0))
+        row["click_change"] = pct_change(float(row["current_clicks"] or 0), float(row["previous_clicks"] or 0))
+        row["lead_change"] = pct_change(float(row["current_leads"] or 0), float(row["previous_leads"] or 0))
+        row["order_change"] = pct_change(float(row["current_orders"] or 0), float(row["previous_orders"] or 0))
+        row["gmv_change"] = pct_change(float(row["current_gmv"] or 0), float(row["previous_gmv"] or 0))
+        row["cpl_change"] = pct_change(float(row["current_cpl"] or 0), float(row["previous_cpl"] or 0)) if row.get("previous_cpl") else None
+        row["roi_change"] = pct_change(float(row["current_roi"] or 0), float(row["previous_roi"] or 0)) if row.get("previous_roi") else None
+        row["main_causes"] = "；".join(infer_causes(row))
+        enriched.append(row)
+
+    affected_count = len(enriched)
+    total_decline = sum(abs(float(row["cost_delta"])) for row in enriched)
+    avg_decline = sum(float(row["cost_change"]) for row in enriched) / affected_count if affected_count else 0
+    lead_drop_count = sum(1 for row in enriched if isinstance(row.get("lead_change"), float) and row["lead_change"] <= -0.2)
+    order_drop_count = sum(1 for row in enriched if isinstance(row.get("order_change"), float) and row["order_change"] <= -0.2)
+    cpl_up_count = sum(1 for row in enriched if isinstance(row.get("cpl_change"), float) and row["cpl_change"] >= 0.2)
+
+    table_rows = []
+    for row in enriched[:20]:
+        table_rows.append({
+            "客户": row["customer_account_name"],
+            "销售": row["sales_name"],
+            "客户等级": row["customer_level"],
+            "上月消耗": row["previous_cost"],
+            "本月消耗": row["current_cost"],
+            "消耗变化": format_pct(row["cost_change"]),
+            "线索变化": format_pct(row["lead_change"]),
+            "订单变化": format_pct(row["order_change"]),
+            "ROI变化": format_pct(row["roi_change"]),
+            "主要原因": row["main_causes"],
+        })
+
+    insights = [
+        f"共发现 {affected_count} 个客户本月较上月消耗下降超过 20%。",
+        f"这些客户合计消耗减少约 {total_decline:,.0f} 元，平均降幅 {format_pct(avg_decline)}。",
+    ]
+    if lead_drop_count:
+        insights.append(f"其中 {lead_drop_count} 个客户同时出现线索下滑，优先排查流量承接和线索质量。")
+    if order_drop_count:
+        insights.append(f"其中 {order_drop_count} 个客户订单下滑，建议复盘到店、试驾和销售跟进链路。")
+    if cpl_up_count:
+        insights.append(f"其中 {cpl_up_count} 个客户 CPL 上升，可能存在点击成本抬升或转化率下降。")
+
+    chart_items = [
+        {"label": row["customer_account_name"][:12], "value": round(abs(float(row["cost_delta"])), 2)}
+        for row in enriched[:8]
+    ]
+
+    evidence = {
+        "current_month": current_month,
+        "previous_month": previous_month,
+        "affected_count": affected_count,
+        "total_decline": round(total_decline, 2),
+        "avg_decline": round(avg_decline, 4),
+        "top_customers": table_rows[:8],
+        "insights": insights,
+    }
+    if MINIMAX_API_KEY and MINIMAX_API_URL:
+        system = """
+你是销售经营分析专家。请基于给定证据生成归因诊断报告，不要编造证据之外的数据。
+输出要包括：结论、主要原因、重点客户、销售动作建议。
+""".strip()
+        answer = clean_model_text(minimax_chat([
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps(evidence, ensure_ascii=False)},
+        ], temperature=0.3))
+    else:
+        answer = "\n".join(["## 归因诊断结论", *[f"- {item}" for item in insights]])
+
+    blocks = [
+        {"type": "summary", "title": "归因诊断结论", "content": answer},
+        {"type": "kpi_cards", "items": [
+            {"label": "分析月份", "value": f"{previous_month} → {current_month}"},
+            {"label": "下降客户数", "value": affected_count},
+            {"label": "消耗减少", "value": f"{total_decline:,.0f}"},
+            {"label": "平均降幅", "value": format_pct(avg_decline)},
+        ]},
+        {"type": "tags", "items": ["消耗下降≥20%", "月环比", "归因诊断", "需优先跟进"]},
+        {"type": "insights", "items": insights},
+        {"type": "chart", "title": "消耗下降 Top 客户", "chartType": "bar", "data": {"items": chart_items}},
+        table_block("客户归因明细", list(table_rows[0].keys()) if table_rows else [], table_rows),
+        {"type": "actions", "items": [
+            "优先联系消耗下降金额最大的客户，确认预算、投放节奏或合作状态是否变化。",
+            "对线索同步下滑客户，拆解曝光、点击和线索转化链路，判断是流量不足还是承接不足。",
+            "对 CPL 上升客户，复盘产品结构和点击成本，考虑迁移部分预算到更高 ROI 产品。",
+            "对订单下滑客户，联动门店排查到店、试驾和销售跟进质量。",
+        ]},
+        {"type": "followups", "items": ["把这些客户按销售负责人分组", "帮我生成客户跟进话术", "继续分析下降客户的产品结构变化"]},
+    ]
+    return block_response(
+        intent="attribution_analysis",
+        skill="attribution_analysis",
+        answer=answer,
+        blocks=blocks,
+        debug={"sql": sql, "reason": "筛选本月较上月消耗下降超过 20% 的客户，并拆解流量、线索、转化、效果指标变化。"},
+        sql=sql,
+        reason="筛选本月较上月消耗下降超过 20% 的客户，并拆解流量、线索、转化、效果指标变化。",
+        columns=columns,
+        rows=enriched,
+    )
+
+
 def local_fallback(question: str) -> dict[str, Any]:
     q = question
     if "余额" in q and ("快没" in q or "不足" in q or "断投" in q):
@@ -342,12 +630,19 @@ def handle_chat(payload: dict[str, Any]) -> dict[str, Any]:
     history = payload.get("history", [])
     if not question:
         raise ValueError("请输入问题")
-    if not MINIMAX_API_KEY or not MINIMAX_API_URL:
-        return local_fallback(question)
-    plan = generate_sql(question, history if isinstance(history, list) else [])
-    columns, rows = execute_sql(plan["sql"])
-    answer = summarize(question, add_limit(plan["sql"]), plan["reason"], rows)
-    return {"answer": answer, "sql": add_limit(plan["sql"]), "reason": plan["reason"], "columns": columns, "rows": rows, "fallback": False}
+
+    route = detect_intent(question)
+    skill = route["skill"]
+    if skill == "general_chat":
+        result = general_chat_skill(question, history if isinstance(history, list) else [])
+    elif skill == "attribution_analysis":
+        result = attribution_analysis_skill(question, history if isinstance(history, list) else [])
+    else:
+        result = sql_query_skill(question, history if isinstance(history, list) else [])
+    result.setdefault("intent", route["intent"])
+    result.setdefault("skill", skill)
+    result["route"] = route
+    return result
 
 
 class Handler(BaseHTTPRequestHandler):

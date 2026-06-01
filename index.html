@@ -349,6 +349,59 @@
       cursor: not-allowed;
     }
 
+    .block-stack { display: grid; gap: 12px; }
+
+    .bi-card {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #ffffff, #fbfdff);
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .bi-title {
+      margin: 0 0 8px;
+      font-size: 14px;
+      font-weight: 800;
+      color: #1f2937;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .kpi-card {
+      border: 1px solid #dbeafe;
+      background: #eff6ff;
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .kpi-card b { display: block; font-size: 18px; color: #1d4ed8; }
+    .kpi-card span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+
+    .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag-pill { padding: 6px 10px; border-radius: 999px; background: #ecfdf3; color: #027a48; font-size: 12px; font-weight: 700; }
+
+    .insight-list, .action-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .insight-list li, .action-list li {
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+
+    .bar-chart { display: grid; gap: 10px; }
+    .bar-row { display: grid; grid-template-columns: minmax(90px, 180px) 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
+    .bar-track { height: 10px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), var(--green)); }
+    .bar-value { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .followups { display: flex; flex-wrap: wrap; gap: 8px; }
+    .followup-btn { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 8px 10px; cursor: pointer; color: #344054; }
+    .followup-btn:hover { background: var(--primary-soft); border-color: var(--primary); }
+
     .mobile-chips { display: none; }
     .typing { color: var(--muted); }
 
@@ -407,6 +460,9 @@
         flex: 0 0 auto;
       }
 
+      .kpi-grid { grid-template-columns: 1fr 1fr; }
+      .bar-row { grid-template-columns: 90px 1fr; }
+      .bar-value { grid-column: 2; }
       .composer { padding: 10px; }
       .composer-inner { border-radius: 16px; }
       .send { min-width: 70px; padding: 11px 14px; }
@@ -462,14 +518,14 @@
 
   <script>
     const suggestions = [
+      '我想拜访一个客户，告诉我几个有用的话术',
+      '我的客户中本月环比上月消耗下降20%的客户出现哪些问题，给我做归因分析',
       '本月客户消耗 Top10 是谁？',
       '哪些客户余额快没了？',
       '哪些客户消耗高但没有订单？',
       '哪些客户逾期应收最高？',
       '线索通和信息流广告哪个效果更好？',
-      '按销售看本月消耗和 ROI 排名',
-      '哪些客户适合追加预算？',
-      '各区域消耗、线索、订单和 ROI 表现如何？'
+      '哪些客户适合追加预算？'
     ];
 
     const messagesEl = document.getElementById('messages');
@@ -529,7 +585,11 @@
       avatar.textContent = role === 'user' ? '我' : 'AI';
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.innerHTML = role === 'assistant' ? markdownLite(content) : escapeHtml(content);
+      if (role === 'assistant' && meta && Array.isArray(meta.blocks) && meta.blocks.length) {
+        bubble.appendChild(renderBlocks(meta.blocks));
+      } else {
+        bubble.innerHTML = role === 'assistant' ? markdownLite(content) : escapeHtml(content);
+      }
 
       if (meta) {
         bubble.appendChild(buildMeta(meta));
@@ -542,24 +602,160 @@
       return wrapper;
     }
 
+    function createCard(title) {
+      const card = document.createElement('div');
+      card.className = 'bi-card';
+      if (title) {
+        const h = document.createElement('div');
+        h.className = 'bi-title';
+        h.textContent = title;
+        card.appendChild(h);
+      }
+      return card;
+    }
+
+    function renderBlocks(blocks) {
+      const stack = document.createElement('div');
+      stack.className = 'block-stack';
+      for (const block of blocks) {
+        const el = renderBlock(block);
+        if (el) stack.appendChild(el);
+      }
+      return stack;
+    }
+
+    function renderBlock(block) {
+      if (!block || !block.type) return null;
+      if (block.type === 'summary') {
+        const card = createCard(block.title || '结论');
+        const content = document.createElement('div');
+        content.innerHTML = markdownLite(block.content || '');
+        card.appendChild(content);
+        return card;
+      }
+      if (block.type === 'kpi_cards') {
+        const grid = document.createElement('div');
+        grid.className = 'kpi-grid';
+        for (const item of block.items || []) {
+          const card = document.createElement('div');
+          card.className = 'kpi-card';
+          card.innerHTML = `<b>${escapeHtml(item.value)}</b><span>${escapeHtml(item.label)}</span>`;
+          grid.appendChild(card);
+        }
+        const wrap = createCard(block.title || '核心指标');
+        wrap.appendChild(grid);
+        return wrap;
+      }
+      if (block.type === 'tags') {
+        const wrap = createCard(block.title || '标签');
+        const list = document.createElement('div');
+        list.className = 'tag-list';
+        for (const item of block.items || []) {
+          const tag = document.createElement('span');
+          tag.className = 'tag-pill';
+          tag.textContent = item;
+          list.appendChild(tag);
+        }
+        wrap.appendChild(list);
+        return wrap;
+      }
+      if (block.type === 'insights' || block.type === 'actions') {
+        const wrap = createCard(block.title || (block.type === 'actions' ? '建议动作' : '主要发现'));
+        const list = document.createElement('ul');
+        list.className = block.type === 'actions' ? 'action-list' : 'insight-list';
+        for (const item of block.items || []) {
+          const li = document.createElement('li');
+          li.textContent = item;
+          list.appendChild(li);
+        }
+        wrap.appendChild(list);
+        return wrap;
+      }
+      if (block.type === 'table') {
+        const wrap = createCard(block.title || '明细数据');
+        wrap.appendChild(buildTable(block.columns || [], block.rows || []));
+        return wrap;
+      }
+      if (block.type === 'chart') {
+        return renderChartBlock(block);
+      }
+      if (block.type === 'followups') {
+        const wrap = createCard(block.title || '你可以继续问');
+        const list = document.createElement('div');
+        list.className = 'followups';
+        for (const item of block.items || []) {
+          const btn = document.createElement('button');
+          btn.className = 'followup-btn';
+          btn.textContent = item;
+          btn.onclick = () => { inputEl.value = item; sendMessage(); };
+          list.appendChild(btn);
+        }
+        wrap.appendChild(list);
+        return wrap;
+      }
+      return null;
+    }
+
+    function renderChartBlock(block) {
+      const wrap = createCard(block.title || '趋势图');
+      const chart = document.createElement('div');
+      chart.className = 'bar-chart';
+      const items = (block.data && block.data.items) || [];
+      const max = Math.max(...items.map(item => Number(item.value) || 0), 1);
+      for (const item of items) {
+        const row = document.createElement('div');
+        row.className = 'bar-row';
+        const label = document.createElement('div');
+        label.textContent = item.label;
+        const track = document.createElement('div');
+        track.className = 'bar-track';
+        const fill = document.createElement('div');
+        fill.className = 'bar-fill';
+        fill.style.width = `${Math.max(4, (Number(item.value) || 0) / max * 100)}%`;
+        track.appendChild(fill);
+        const value = document.createElement('div');
+        value.className = 'bar-value';
+        value.textContent = Number(item.value || 0).toLocaleString();
+        row.appendChild(label);
+        row.appendChild(track);
+        row.appendChild(value);
+        chart.appendChild(row);
+      }
+      wrap.appendChild(chart);
+      return wrap;
+    }
+
     function buildMeta(meta) {
+      const debug = meta.debug || {};
+      const sqlText = debug.sql || meta.sql || '';
+      const reasonText = debug.reason || meta.reason || '';
+      const hasRows = meta.rows && meta.rows.length;
+      if (!sqlText && !reasonText && !hasRows && !meta.intent) return document.createDocumentFragment();
+
       const box = document.createElement('div');
       box.className = 'meta-box';
       const toggle = document.createElement('button');
       toggle.className = 'meta-toggle';
-      toggle.textContent = `查看查询明细${meta.fallback ? '（本地兜底）' : ''}`;
+      toggle.textContent = `查看执行明细${meta.fallback ? '（本地兜底）' : ''}`;
       toggle.onclick = () => box.classList.toggle('open');
       const content = document.createElement('div');
       content.className = 'meta-content';
 
-      const reason = document.createElement('p');
-      reason.innerHTML = `<strong>查询逻辑：</strong>${escapeHtml(meta.reason || '-')}`;
-      const sql = document.createElement('pre');
-      sql.textContent = meta.sql || '';
-      content.appendChild(reason);
-      content.appendChild(sql);
+      const route = document.createElement('p');
+      route.innerHTML = `<strong>意图/技能：</strong>${escapeHtml(meta.intent || '-')} / ${escapeHtml(meta.skill || '-')}`;
+      content.appendChild(route);
 
-      if (meta.rows && meta.rows.length) {
+      if (reasonText) {
+        const reason = document.createElement('p');
+        reason.innerHTML = `<strong>查询逻辑：</strong>${escapeHtml(reasonText)}`;
+        content.appendChild(reason);
+      }
+      if (sqlText) {
+        const sql = document.createElement('pre');
+        sql.textContent = sqlText;
+        content.appendChild(sql);
+      }
+      if (hasRows) {
         content.appendChild(buildTable(meta.columns || Object.keys(meta.rows[0]), meta.rows));
       }
 
@@ -603,7 +799,7 @@
       inputEl.value = '';
       autoResize();
       sendBtn.disabled = true;
-      const loading = appendMessage('assistant', '<span class="typing">正在理解问题、生成 SQL 并分析数据...</span>');
+      const loading = appendMessage('assistant', '<span class="typing">正在理解问题并选择合适的销售分析技能...</span>');
       try {
         const resp = await fetch('/api/chat', {
           method: 'POST',

@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 销售分析功能讨论会话记录</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --user: #e8f2ff;
+      --assistant: #f1f7ee;
+      --border: #d8dee9;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --code: #f3f4f6;
+      --accent-user: #2563eb;
+      --accent-assistant: #16a34a;
+    }
+    body {
+      margin: 0;
+      padding: 32px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      line-height: 1.7;
+    }
+    .container { max-width: 980px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 26px 0 10px; font-size: 22px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    h3 { margin: 22px 0 8px; font-size: 18px; }
+    h4 { margin: 18px 0 6px; font-size: 16px; }
+    .meta { margin-bottom: 28px; color: var(--muted); font-size: 14px; }
+    .message {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin: 18px 0;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .message.user { border-left: 6px solid var(--accent-user); }
+    .message.assistant { border-left: 6px solid var(--accent-assistant); }
+    .role { font-weight: 700; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+    .user .role { background: var(--user); color: var(--accent-user); }
+    .assistant .role { background: var(--assistant); color: var(--accent-assistant); }
+    .content { padding: 16px 20px; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin-top: 0; padding-left: 24px; }
+    blockquote {
+      margin: 12px 0;
+      padding: 10px 14px;
+      border-left: 4px solid var(--border);
+      background: #fafafa;
+      color: #374151;
+    }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
+    pre {
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      overflow-x: auto;
+      white-space: pre;
+    }
+    pre code { background: transparent; padding: 0; border-radius: 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      background: #fff;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f3f4f6; font-weight: 700; }
+    hr { border: 0; border-top: 1px solid var(--border); margin: 22px 0; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>AI 销售分析功能讨论会话记录</h1>
+    <div class="meta">导出内容：用户提问与助手回复；Markdown 已转换为 HTML 显示。</div>
+
+    <section class="message user">
+      <div class="role">用户提问 1</div>
+      <div class="content"><p>来来来，汇报下模型</p></div>
+    </section>
+
+    <section class="message assistant">
+      <div class="role">助手回复 1</div>
+      <div class="content">
+        <p>当前会话里我由 <strong>gpt-5.5</strong> 驱动。</p>
+        <p>环境里也提示：如果是在构建 Anthropic/Claude 相关 AI 应用，当前建议默认使用最新高能力模型，例如：</p>
+        <ul>
+          <li><code>claude-opus-4-6</code></li>
+          <li><code>claude-sonnet-4-6</code></li>
+          <li><code>claude-haiku-4-5-20251001</code></li>
+        </ul>
+        <p>我现在是作为 <strong>Genius Code CLI</strong> 里的编程助手运行，主要负责代码阅读、修改、测试、验证、提交/PR 辅助等研发任务。</p>
+      </div>
+    </section>
+
+    <section class="message user">
+      <div class="role">用户提问 2</div>
+      <div class="content"><p>AI的大模型能否直接查询CK表，或者我有一个宽表，有销售id这个字段，然后根据API传参销售id=xxxx，来获取所有销售id=xxxx的行，来让大模型进行数据分析？</p></div>
+    </section>
+
+    <section class="message assistant">
+      <div class="role">助手回复 2</div>
+      <div class="content">
+        <p>可以，但<strong>不建议让大模型“直接裸连 CK/ClickHouse 表”</strong>。更推荐做成：</p>
+        <blockquote><strong>大模型 → 调用受控 API/工具 → 后端查询 CK → 返回结构化结果/摘要 → 大模型分析</strong></blockquote>
+        <p>你说的场景完全可行：宽表里有 <code>sales_id</code> 字段，API 传 <code>sales_id=xxxx</code>，后端查出对应行，再交给大模型分析。</p>
+
+        <hr />
+        <h2>推荐架构</h2>
+        <pre><code>用户问题
+  ↓
+大模型理解意图
+  ↓
+调用后端 API，例如 /sales/analyze?sales_id=123
+  ↓
+后端校验权限 + 查询 ClickHouse
+  ↓
+返回数据摘要 / 明细 / 聚合结果
+  ↓
+大模型生成分析结论</code></pre>
+
+        <hr />
+        <h2>示例查询</h2>
+        <p>假设表是：</p>
+        <pre><code>sales_wide_table</code></pre>
+        <p>字段包括：</p>
+        <pre><code>sales_id
+order_id
+customer_id
+amount
+pay_time
+region
+product_name
+status
+...</code></pre>
+        <p>后端可以执行：</p>
+        <pre><code>SELECT *
+FROM sales_wide_table
+WHERE sales_id = {sales_id:String}
+LIMIT 1000</code></pre>
+        <p>然后把结果返回给大模型。</p>
+
+        <hr />
+        <h2>但要注意几个关键点</h2>
+        <h3>1. 不要让大模型直接拼 SQL 执行</h3>
+        <p>危险写法：</p>
+        <pre><code>SELECT * FROM sales_wide_table WHERE sales_id = '${user_input}'</code></pre>
+        <p>如果用户传：</p>
+        <pre><code>123' OR 1=1 --</code></pre>
+        <p>可能造成 SQL 注入或越权查询。</p>
+        <p>应该使用：</p>
+        <ul>
+          <li>参数化查询</li>
+          <li>白名单字段</li>
+          <li>固定 SQL 模板</li>
+          <li>权限校验</li>
+        </ul>
+
+        <h3>2. 不要无脑把所有行都塞给大模型</h3>
+        <p>如果 <code>sales_id=xxxx</code> 命中几万行，直接传给大模型会有问题：</p>
+        <ul>
+          <li>超出上下文长度</li>
+          <li>token 成本高</li>
+          <li>分析速度慢</li>
+          <li>噪音多</li>
+          <li>可能泄露敏感字段</li>
+        </ul>
+        <p>更好的方式是后端先做聚合：</p>
+        <pre><code>SELECT
+    count() AS order_count,
+    sum(amount) AS total_amount,
+    avg(amount) AS avg_amount,
+    min(pay_time) AS first_order_time,
+    max(pay_time) AS last_order_time
+FROM sales_wide_table
+WHERE sales_id = {sales_id:String}</code></pre>
+        <p>再补充必要明细样本：</p>
+        <pre><code>SELECT order_id, customer_id, amount, pay_time, region, product_name, status
+FROM sales_wide_table
+WHERE sales_id = {sales_id:String}
+ORDER BY pay_time DESC
+LIMIT 100</code></pre>
+        <p>这样大模型拿到的是“可分析的数据”，而不是原始大宽表全量 dump。</p>
+
+        <hr />
+        <h2>更合理的数据返回方式</h2>
+        <p>可以让 API 返回这种结构：</p>
+        <pre><code>{
+  "sales_id": "123",
+  "summary": {
+    "order_count": 2580,
+    "total_amount": 928300.5,
+    "avg_amount": 359.8,
+    "refund_count": 32,
+    "active_customer_count": 760
+  },
+  "by_region": [
+    {"region": "华东", "amount": 420000, "order_count": 1100},
+    {"region": "华南", "amount": 280000, "order_count": 820}
+  ],
+  "recent_orders": [
+    {
+      "order_id": "A001",
+      "amount": 560,
+      "pay_time": "2026-05-01 12:30:00",
+      "region": "华东",
+      "status": "paid"
+    }
+  ]
+}</code></pre>
+        <p>然后大模型分析：</p>
+        <ul>
+          <li>该销售的总业绩</li>
+          <li>区域分布</li>
+          <li>客单价</li>
+          <li>成交趋势</li>
+          <li>异常订单</li>
+          <li>退款情况</li>
+          <li>客户复购</li>
+          <li>与团队平均水平对比</li>
+        </ul>
+
+        <hr />
+        <h2>典型实现方式</h2>
+        <h3>方式一：固定分析 API</h3>
+        <p>适合业务明确的场景。</p>
+        <pre><code>GET /api/sales/analysis?sales_id=123</code></pre>
+        <p>后端固定查几个指标，返回给大模型。</p>
+        <p>优点：</p>
+        <ul>
+          <li>安全</li>
+          <li>稳定</li>
+          <li>可控</li>
+          <li>性能好</li>
+        </ul>
+        <p>缺点：</p>
+        <ul><li>灵活性较弱</li></ul>
+
+        <h3>方式二：大模型生成查询意图，后端转 SQL</h3>
+        <p>例如用户问：</p>
+        <blockquote>帮我分析销售 123 最近 30 天的成交趋势。</blockquote>
+        <p>大模型输出结构化意图：</p>
+        <pre><code>{
+  "metric": "sales_trend",
+  "sales_id": "123",
+  "time_range": "last_30_days",
+  "group_by": "day"
+}</code></pre>
+        <p>后端根据这个 JSON 生成安全 SQL：</p>
+        <pre><code>SELECT
+    toDate(pay_time) AS day,
+    count() AS order_count,
+    sum(amount) AS total_amount
+FROM sales_wide_table
+WHERE sales_id = {sales_id:String}
+  AND pay_time &gt;= now() - INTERVAL 30 DAY
+GROUP BY day
+ORDER BY day</code></pre>
+        <p>优点：</p>
+        <ul>
+          <li>比固定 API 灵活</li>
+          <li>比让模型直接写 SQL 安全</li>
+        </ul>
+
+        <h3>方式三：让大模型直接生成 SQL，但必须加防护</h3>
+        <p>可以做，但要有：</p>
+        <ul>
+          <li>SQL 只读账号</li>
+          <li>禁止 <code>INSERT/UPDATE/DELETE/DROP</code></li>
+          <li>查询超时</li>
+          <li>最大扫描行数</li>
+          <li>最大返回行数</li>
+          <li>字段白名单</li>
+          <li>表白名单</li>
+          <li>SQL 审计</li>
+          <li>权限过滤</li>
+          <li>敏感字段脱敏</li>
+          <li>查询成本控制</li>
+        </ul>
+        <p>适合内部 BI 助手、数据分析 Agent。</p>
+
+        <hr />
+        <h2>关键结论</h2>
+        <p>可以实现你说的：</p>
+        <blockquote>API 传 <code>sales_id=xxxx</code>，查询宽表中所有 <code>sales_id=xxxx</code> 的行，让大模型分析。</blockquote>
+        <p>但生产上建议这样做：</p>
+        <ol>
+          <li><strong>不要让大模型直接连 CK</strong></li>
+          <li><strong>不要直接返回所有明细行</strong></li>
+          <li><strong>后端先做权限校验、字段过滤、聚合计算</strong></li>
+          <li><strong>把“摘要 + 必要明细 + 统计指标”交给大模型</strong></li>
+          <li><strong>大模型负责解释、归因、洞察、生成报告</strong></li>
+        </ol>
+        <p>一句话：</p>
+        <blockquote>CK 负责查数和聚合，大模型负责理解和表达；中间必须有一层安全可控的数据服务。</blockquote>
+      </div>
+    </section>
+
+    <section class="message user">
+      <div class="role">用户提问 3</div>
+      <div class="content"><p>如果我要让销售在跟AI对话时，可以选择几个预置功能：1-进行归因分析，2-生成分析报告，3-生成提案，怎么设计这个功能</p></div>
+    </section>
+
+    <section class="message assistant">
+      <div class="role">助手回复 3</div>
+      <div class="content">
+        <p>可以设计成一个 <strong>“销售 AI 分析工作台 / 对话式助手”</strong>，销售在对话里选择预置功能，大模型不直接查表，而是通过后端工具/API 获取数据、生成结果。</p>
+        <p>核心思路是：</p>
+        <blockquote><strong>销售选择功能 → AI 收集必要参数 → 后端查数/聚合 → AI 生成分析/报告/提案 → 用户可继续追问或导出</strong></blockquote>
+
+        <hr />
+        <h2>一、整体交互设计</h2>
+        <p>销售进入 AI 对话后，可以看到几个快捷入口：</p>
+        <pre><code>你好，我可以帮你做以下事情：
+
+1. 归因分析
+2. 生成分析报告
+3. 生成客户提案
+
+请选择一个功能，或直接输入你的问题。</code></pre>
+        <p>也可以做成按钮：</p>
+        <pre><code>[归因分析] [生成分析报告] [生成客户提案]</code></pre>
+        <p>销售点击后，AI 进入对应流程。</p>
+
+        <hr />
+        <h2>二、功能 1：归因分析</h2>
+        <h3>目标</h3>
+        <p>帮助销售分析：</p>
+        <ul>
+          <li>业绩增长/下降的原因</li>
+          <li>客户流失原因</li>
+          <li>转化率变化原因</li>
+          <li>某个客户/区域/产品表现异常原因</li>
+          <li>某销售 ID 下订单变化原因</li>
+        </ul>
+
+        <h3>交互示例</h3>
+        <p>销售点击：<strong>归因分析</strong></p>
+        <p>AI 问：</p>
+        <pre><code>你想分析什么对象？
+
+1. 我的整体业绩
+2. 某个客户
+3. 某个产品
+4. 某个区域
+5. 某个时间段的业绩变化</code></pre>
+        <p>销售选择：</p>
+        <pre><code>我的整体业绩，最近30天为什么下降？</code></pre>
+        <p>AI 继续确认：</p>
+        <pre><code>我将分析销售ID=123 在最近30天相较前30天的业绩变化，是否继续？</code></pre>
+        <p>用户确认后，后端查询数据。</p>
+
+        <h3>后端需要的数据</h3>
+        <p>例如根据 <code>sales_id</code> 查询：</p>
+        <h4>总体变化</h4>
+        <pre><code>最近30天GMV、订单数、客户数、客单价
+对比前30天GMV、订单数、客户数、客单价</code></pre>
+        <h4>拆解维度</h4>
+        <pre><code>按客户拆</code></pre>
+        <p><em>注：此处为当时会话中已显示内容。</em></p>
+      </div>
+    </section>
+
+    <section class="message user">
+      <div class="role">用户提问 4</div>
+      <div class="content"><p>这几个功能，是通过skill的方式实现么？</p></div>
+    </section>
+
+    <section class="message assistant">
+      <div class="role">助手回复 4</div>
+      <div class="content">
+        <p>可以用 <strong>skill</strong> 实现，但不一定只能用 skill。取决于你说的“AI 对话产品”运行在哪个体系里。</p>
+        <p>如果你是在 <strong>Genius Code / Claude Code 这类 Agent CLI/IDE 环境</strong>里做预置能力，<code>skill</code> 很合适。</p>
+        <p>如果你是在 <strong>面向销售的业务系统 / Web 对话助手</strong>里做产品功能，更推荐用：</p>
+        <blockquote><strong>前端预置入口 + 后端业务 API/Tool + LLM function calling / tool calling + Prompt 编排</strong></blockquote>
+        <p>也就是说，业务产品里通常不是直接叫 skill，而是叫 <strong>工具、函数、Agent Action、Workflow、Intent、Plugin</strong>。</p>
+
+        <hr />
+        <h2>1. Skill 适合什么</h2>
+        <p><code>skill</code> 更像是：</p>
+        <blockquote>把某类可复用任务封装成一个“能力包”，里面包含 prompt、工具调用规则、流程说明、参数要求。</blockquote>
+        <p>例如：</p>
+        <pre><code>/sales-attribution
+/sales-report
+/sales-proposal</code></pre>
+        <p>每个 skill 负责一个相对完整的任务流程：</p>
+        <ul>
+          <li>归因分析 skill</li>
+          <li>分析报告 skill</li>
+          <li>客户提案 skill</li>
+        </ul>
+        <p>它可以定义：</p>
+        <ul>
+          <li>需要哪些输入参数</li>
+          <li>如何调用数据查询工具</li>
+          <li>如何组织分析逻辑</li>
+          <li>输出格式是什么</li>
+          <li>如何追问缺失信息</li>
+        </ul>
+
+        <hr />
+        <h2>2. 但业务系统里更推荐分层设计</h2>
+        <p>你可以这样理解：</p>
+        <pre><code>用户点击功能入口
+        ↓
+意图识别 / 选择 workflow
+        ↓
+AI 按流程追问参数
+        ↓
+调用后端 API / Tool 查询数据
+        ↓
+AI 生成结果</code></pre>
+        <p>这里的“skill”可以作为流程编排层，但不要让 skill 直接承担所有事情。</p>
+        <p>更合理的是：</p>
+        <pre><code>Skill / Workflow：负责业务流程和提示词
+Tool / API：负责查数、算指标、权限控制
+LLM：负责理解、分析、生成</code></pre>
+
+        <hr />
+        <h2>推荐设计</h2>
+        <h3>方案 A：用 Skill 封装三个功能</h3>
+        <p>适合：</p>
+        <ul>
+          <li>内部 AI 助手</li>
+          <li>Agent 平台</li>
+          <li>可配置技能市场</li>
+          <li>需要快速上线 MVP</li>
+          <li>每个功能流程比较独立</li>
+        </ul>
+        <p>可以设计三个 skill：</p>
+        <pre><code>sales_attribution_skill
+sales_report_skill
+sales_proposal_skill</code></pre>
+
+        <h4>归因分析 Skill</h4>
+        <p>职责：</p>
+        <pre><code>根据销售ID、时间范围、分析目标，调用指标查询工具，完成业绩变化归因。</code></pre>
+        <p>调用工具：</p>
+        <pre><code>get_sales_metrics
+get_sales_dimension_breakdown
+get_customer_changes
+get_product_changes
+get_conversion_funnel</code></pre>
+        <p>输出：</p>
+        <pre><code>1. 结论摘要
+2. 核心变化
+3. 主要归因
+4. 证据数据
+5. 建议动作</code></pre>
+
+        <h4>分析报告 Skill</h4>
+        <p>职责：</p>
+        <pre><code>根据销售ID、周期、报告类型，生成结构化经营分析报告。</code></pre>
+        <p>调用工具：</p>
+        <pre><code>get_sales_summary
+get_trend_data
+get_rank_comparison
+get_customer_profile
+get_risk_opportunities</code></pre>
+        <p>输出：</p>
+        <pre><code>1. 本期概览
+2. 关键指标
+3. 趋势分析
+4. 客户分析
+5. 问题与机会
+6. 下阶段建议</code></pre>
+
+        <h4>客户提案 Skill</h4>
+        <p>职责：</p>
+        <pre><code>根据客户信息、历史交易、客户痛点和目标，生成面向客户的销售提案。</code></pre>
+        <p>调用工具：</p>
+        <pre><code>get_customer_profile
+get_customer_order_history
+get_product_recommendations
+get_case_studies
+get_price_policy</code></pre>
+        <p>输出：</p>
+        <pre><code>1. 客户现状
+2. 业务痛点
+3. 解决方案
+4. 推荐产品/服务
+5. 预期收益
+6. 实施计划
+7. 下一步沟通话术</code></pre>
+
+        <hr />
+        <h3>方案 B：用一个 Sales Agent + 多个工具</h3>
+        <p>适合更长期、可扩展的产品。</p>
+        <pre><code>SalesAgent
+ ├── attribution_analysis_tool
+ ├── report_generation_tool
+ ├── proposal_generation_tool
+ ├── sales_data_query_tool
+ ├── customer_profile_tool
+ └── product_recommendation_tool</code></pre>
+        <p>前端只是展示三个按钮：</p>
+        <pre><code>[归因分析] [生成分析报告] [生成提案]</code></pre>
+        <p>点击按钮后传入 intent：</p>
+        <pre><code>{
+  "intent": "attribution_analysis",
+  "sales_id": "S123",
+  "user_id": "U456"
+}</code></pre>
+        <p>Agent 根据 intent 进入不同流程。</p>
+        <p>这种方式更像业务系统里的标准做法。</p>
+
+        <hr />
+        <h2>我更推荐的落地方式</h2>
+        <p>如果你是做销售业务场景，我建议：</p>
+        <blockquote><strong>预置功能不要直接等同于 Skill，而是设计成 Workflow。Skill 可以是 Workflow 的一种实现方式。</strong></blockquote>
+        <p>架构可以是：</p>
+        <pre><code>前端按钮
+  ↓
+intent/workflow_type
+  ↓
+Workflow 编排层
+  ↓
+LLM
+  ↓
+Tool/API 层
+  ↓
+CK/CRM/订单/客户画像数据</code></pre>
+
+        <hr />
+        <h3>示例：一次归因分析请求</h3>
+        <p>前端发送：</p>
+        <pre><code>{
+  "workflow_type": "attribution_analysis",
+  "sales_id": "S123",
+  "user_input": "分析我最近30天业绩下滑原因"
+}</code></pre>
+        <p>后端 Workflow：</p>
+        <pre><code>1. 解析时间范围：最近30天 vs 前30天
+2. 校验销售权限
+3. 查询总体指标
+4. 查询客户维度拆解
+5. 查询产品维度拆解
+6. 查询区域维度拆解
+7. 让 LLM 根据数据生成归因
+8. 返回结构化结果</code></pre>
+
+        <hr />
+        <h3>Tool/API 示例</h3>
+        <p>不要只暴露一个万能 SQL 工具，建议暴露业务语义工具：</p>
+        <pre><code>get_sales_kpi_summary
+get_sales_trend
+get_sales_dimension_breakdown
+get_customer_churn_and_growth
+get_product_performance
+get_customer_profile
+get_recommended_products
+generate_proposal_context</code></pre>
+        <p>例如：</p>
+        <pre><code>{
+  "tool": "get_sales_dimension_breakdown",
+  "params": {
+    "sales_id": "S123",
+    "time_range": {
+      "current": ["2026-05-01", "2026-05-30"],
+      "previous": ["2026-04-01", "2026-04-30"]
+    },
+    "dimensions": ["customer", "product", "region"]
+  }
+}</code></pre>
+
+        <hr />
+        <h2>三种实现方式对比</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>方式</th>
+              <th>适合场景</th>
+              <th>优点</th>
+              <th>缺点</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Skill</td>
+              <td>Agent 平台、内部助手、MVP</td>
+              <td>快速、可复用、流程清晰</td>
+              <td>容易和业务权限/数据层耦合</td>
+            </tr>
+            <tr>
+              <td>Workflow</td>
+              <td>正式业务系统</td>
+              <td>稳定、可控、可审计</td>
+              <td>开发成本略高</td>
+            </tr>
+            <tr>
+              <td>Tool Calling</td>
+              <td>灵活问答、复杂分析</td>
+              <td>可扩展、自然语言驱动</td>
+              <td>需要更强治理和安全设计</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <hr />
+        <h2>最佳实践建议</h2>
+        <p>我建议你这样分：</p>
+        <pre><code>Skill/Workflow：定义“怎么完成任务”
+Tool/API：定义“能查什么数据、能做什么动作”
+Prompt：定义“怎么分析和怎么表达”
+权限系统：定义“谁能看什么”
+前端：定义“用户怎么选功能”</code></pre>
+        <p>不要这样设计：</p>
+        <pre><code>一个 skill 里面直接写 SQL、查 CK、拼结果、生成报告</code></pre>
+        <p>更推荐：</p>
+        <pre><code>skill/workflow 调用 get_xxx_data API
+API 内部查询 CK
+LLM 基于返回数据生成分析</code></pre>
+
+        <hr />
+        <h2>最终建议</h2>
+        <p>如果你问“这几个功能是不是通过 skill 实现”：</p>
+        <p><strong>可以。</strong></p>
+        <p>但我建议更准确地说：</p>
+        <blockquote>这三个功能应该设计成三个业务 Workflow；如果你的 AI 平台支持 Skill，那么每个 Workflow 可以封装成一个 Skill。<br />Skill 负责流程、Prompt 和工具调用策略；真正查 CK、查 CRM、算指标的部分应该放在后端 Tool/API。</blockquote>
+      </div>
+    </section>
+
+    <section class="message user">
+      <div class="role">用户提问 5</div>
+      <div class="content"><p>把所有会话内容保存为html文件，要区分我提问的和你回复的。我要把这些内容保存下来好好分析分析。</p></div>
+    </section>
+
+    <section class="message assistant">
+      <div class="role">助手回复 5</div>
+      <div class="content">
+        <p>已保存为 HTML 文件：</p>
+        <p><code>/Users/bytedance/ai_sales_conversation_export.html</code></p>
+        <p>里面按“用户提问 / 助手回复”做了区分。</p>
+      </div>
+    </section>
+
+    <section class="message user">
+      <div class="role">用户提问 6</div>
+      <div class="content"><p>这里面涉及到表格没有显示，应该是markdown语法没有被解析。重新生成一个html，把涉及到markdown语法的内容正常显示出来。</p></div>
+    </section>
+  </main>
+</body>
+</html>

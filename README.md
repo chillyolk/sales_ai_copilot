@@ -1,4 +1,4 @@
-# Sales AI Copilot / 销售经营 AI Copilot
+# XiaoShuTong AI Copilot / 销数通 AI Copilot
 
 [中文](#中文说明) | [English](#english)
 
@@ -8,7 +8,7 @@
 
 ### 项目简介
 
-销售经营 AI Copilot 是一个面向汽车商业化广告销售场景的本地 AI 数据分析 Demo。
+销数通 AI Copilot 是一个面向汽车商业化广告销售场景的本地 AI 数据分析 Demo。
 
 用户可以在网页会话框中输入自然语言问题，例如：
 
@@ -26,6 +26,9 @@
 - 普通销售对话与拜访话术建议
 - 意图识别与技能路由
 - 输入框左侧手动技能选择：自动 / 普通对话 / 数据查询 / 归因分析
+- 本地多会话列表，支持新建、切换、清空当前会话
+- 会话记录保存在浏览器 localStorage
+- 移动端左侧抽屉，集中展示推荐问题和会话列表
 - 销售经营数据分析
 - 客户投放效果诊断
 - 月环比消耗下降客户归因分析
@@ -243,7 +246,7 @@ Content-Type: application/json
 
 ### Overview
 
-Sales AI Copilot is a local AI-powered data analysis demo for automotive advertising sales teams.
+XiaoShuTong AI Copilot is a local AI-powered data analysis demo for automotive advertising sales teams.
 
 Users can ask business questions in natural language, such as:
 
@@ -261,6 +264,9 @@ The application first detects the user's intent. General sales communication que
 - General sales conversation and customer visit talking points
 - Intent detection and skill routing
 - Manual skill selector in the input box: Auto / General Chat / Data Query / Attribution Analysis
+- Local multi-session list with create, switch, and clear-current-session support
+- Session records persisted in browser localStorage
+- Mobile sidebar drawer for recommended questions and session history
 - Sales performance analysis
 - Customer advertising performance diagnosis
 - Month-over-month spend decline attribution analysis

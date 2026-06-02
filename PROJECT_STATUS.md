@@ -5,7 +5,7 @@
 本项目是一个面向汽车商业化广告销售场景的本地 AI 数据分析 Demo，名称为：
 
 ```text
-Sales AI Copilot / 销售经营 AI Copilot
+XiaoShuTong AI Copilot / 销数通 AI Copilot
 ```
 
 目标是让销售通过自然语言会话完成：
@@ -65,7 +65,7 @@ Python 本地后端
 | `server.py` | Python 本地后端，负责 CSV 加载、MiniMax 调用、意图路由、技能执行、SQL 查询和结构化响应 |
 | `index.html` | 前端会话页面，支持 PC 和移动端，渲染 AI 对话和 BI blocks |
 | `README.md` | 中英文项目说明，包含架构、启动方式、API、安全说明等 |
-| `PRD.md` | 产品需求文档，描述销售经营 AI Copilot 的能力和验收标准 |
+| `PRD.md` | 产品需求文档，描述销数通 AI Copilot 的能力和验收标准 |
 | `ads_auto_commercial_mock_20260101_20260531.csv` | 当前唯一数据源，启动时加载到 SQLite 内存表 |
 | `start_app.sh` | 启动脚本 |
 | `stop_app.sh` | 停止脚本 |
@@ -150,7 +150,20 @@ attribution_analysis
 - `actions`：行动建议
 - `followups`：推荐追问
 
-### 4.5 安全能力
+### 4.5 多会话与移动端体验
+
+当前前端支持：
+
+- 右侧顶部标题为“销数通”，标题栏更紧凑
+- 左侧品牌为“销数通 AI Copilot”
+- 输入框左侧支持手动技能选择
+- 顶部支持 icon 形式的新建会话和清空当前会话
+- 左侧栏支持会话列表，可切换当前和历史会话
+- 会话记录保存在浏览器 `localStorage`
+- 移动端默认收起左侧栏，可通过标题栏左侧 icon 从屏幕左侧滑出
+- 移动端抽屉中集中展示推荐问题和会话列表
+
+### 4.6 安全能力
 
 当前安全设计：
 

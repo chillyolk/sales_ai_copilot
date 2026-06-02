@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>销售经营 AI Copilot</title>
+  <title>销数通 AI Copilot</title>
   <style>
     :root {
       --bg: #f4f7fb;
@@ -41,6 +41,8 @@
       padding: 20px;
     }
 
+    .sidebar-overlay { display: none; }
+
     .sidebar, .main {
       background: rgba(255, 255, 255, .86);
       border: 1px solid rgba(220, 227, 239, .9);
@@ -53,7 +55,14 @@
     .sidebar {
       display: flex;
       flex-direction: column;
-      padding: 22px;
+      padding: 20px;
+    }
+
+    .sidebar-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
     }
 
     .brand {
@@ -101,16 +110,16 @@
     .status .warn { color: #d97706; font-weight: 700; }
 
     .section-title {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--muted);
       font-weight: 700;
-      margin: 18px 0 10px;
+      margin: 12px 0 7px;
     }
 
     .chips {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
 
     .chip {
@@ -118,16 +127,53 @@
       background: #fff;
       color: #344054;
       text-align: left;
-      padding: 10px 12px;
-      border-radius: 13px;
+      padding: 8px 10px;
+      border-radius: 11px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
       transition: .15s ease;
     }
 
     .chip:hover {
       border-color: var(--primary);
       background: var(--primary-soft);
+    }
+
+    .session-list {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .session-item {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 12px;
+      padding: 9px 10px;
+      text-align: left;
+      cursor: pointer;
+      color: #344054;
+    }
+
+    .session-item.active {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary-2);
+    }
+
+    .session-title {
+      font-size: 13px;
+      font-weight: 800;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .session-meta {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
     }
 
     .metric-grid {
@@ -162,33 +208,47 @@
     }
 
     .topbar {
-      padding: 18px 22px;
+      padding: 10px 16px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 12px;
+    }
+
+    .topbar-left, .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .topbar h2 {
       margin: 0;
-      font-size: 18px;
+      font-size: 17px;
+      line-height: 1.2;
     }
 
-    .topbar p {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .clear-btn {
+    .icon-btn {
+      width: 34px;
+      height: 34px;
       border: 1px solid var(--border);
       background: #fff;
-      border-radius: 12px;
-      padding: 9px 12px;
-      cursor: pointer;
       color: #344054;
+      border-radius: 11px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      font-size: 17px;
+      line-height: 1;
     }
+
+    .icon-btn:hover {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary-2);
+    }
+
+    .sidebar-toggle { display: none; }
 
     .messages {
       overflow: auto;
@@ -486,7 +546,35 @@
       }
 
       .sidebar {
-        display: none;
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: min(86vw, 320px);
+        z-index: 30;
+        border-radius: 0 22px 22px 0;
+        transform: translateX(-100%);
+        transition: transform .2s ease;
+      }
+
+      .sidebar.open {
+        transform: translateX(0);
+      }
+
+      .sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        background: rgba(15, 23, 42, .36);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .2s ease;
+      }
+
+      .sidebar-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
       }
 
       .main {
@@ -496,13 +584,12 @@
       }
 
       .topbar {
-        padding: 14px 16px;
-        align-items: flex-start;
+        padding: 8px 10px;
       }
 
-      .topbar h2 { font-size: 17px; }
-      .topbar p { font-size: 12px; }
-      .clear-btn { padding: 8px 10px; }
+      .topbar h2 { font-size: 16px; }
+      .sidebar-toggle { display: grid; }
+      .icon-btn { width: 32px; height: 32px; border-radius: 10px; }
 
       .messages {
         padding: 14px;
@@ -520,17 +607,7 @@
         border-radius: 10px;
       }
 
-      .mobile-chips {
-        display: flex;
-        gap: 8px;
-        overflow-x: auto;
-        padding: 0 0 10px;
-      }
-
-      .mobile-chips .chip {
-        white-space: nowrap;
-        flex: 0 0 auto;
-      }
+      .mobile-chips { display: none; }
 
       .kpi-grid { grid-template-columns: 1fr 1fr; }
       .bar-row { grid-template-columns: 90px 1fr; }
@@ -545,20 +622,26 @@
   </style>
 </head>
 <body>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
         <div class="logo">AI</div>
         <div>
-          <h1>销售经营 AI Copilot</h1>
+          <h1>销数通 AI Copilot</h1>
           <p>自然语言问数 · 客户诊断 · 机会建议</p>
         </div>
       </div>
 
       <div class="status" id="status">正在检查数据与模型配置...</div>
 
-      <div class="section-title">推荐问题</div>
-      <div class="chips" id="desktopChips"></div>
+      <div class="sidebar-scroll">
+        <div class="section-title">推荐问题</div>
+        <div class="chips" id="desktopChips"></div>
+
+        <div class="section-title">会话列表</div>
+        <div class="session-list" id="sessionList"></div>
+      </div>
 
       <div class="section-title">数据范围</div>
       <div class="metric-grid">
@@ -571,11 +654,14 @@
 
     <main class="main">
       <header class="topbar">
-        <div>
-          <h2>销售问数会话</h2>
-          <p>输入一句话，AI 会自动查询本地 CSV 数据源并生成分析结论。</p>
+        <div class="topbar-left">
+          <button class="icon-btn sidebar-toggle" id="sidebarToggleBtn" type="button" aria-label="展开侧栏">☰</button>
+          <h2>销数通</h2>
         </div>
-        <button class="clear-btn" id="clearBtn">清空</button>
+        <div class="topbar-actions">
+          <button class="icon-btn" id="newSessionBtn" type="button" aria-label="新建会话">＋</button>
+          <button class="icon-btn" id="clearBtn" type="button" aria-label="清空当前会话">⌫</button>
+        </div>
       </header>
 
       <section class="messages" id="messages">
@@ -614,25 +700,28 @@
       { value: 'attribution_analysis', label: '归因分析' }
     ];
     let selectedSkill = 'auto';
+    const STORAGE_KEY = 'xiaoshutong_sessions_v1';
+    let appState = { currentSessionId: '', sessions: [] };
 
     const messagesEl = document.getElementById('messages');
     const inputEl = document.getElementById('input');
     const sendBtn = document.getElementById('sendBtn');
     const clearBtn = document.getElementById('clearBtn');
+    const newSessionBtn = document.getElementById('newSessionBtn');
+    const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+    const sidebarEl = document.querySelector('.sidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
     const statusEl = document.getElementById('status');
     const desktopChips = document.getElementById('desktopChips');
     const mobileChips = document.getElementById('mobileChips');
+    const sessionListEl = document.getElementById('sessionList');
     const skillPicker = document.getElementById('skillPicker');
     const skillCurrent = document.getElementById('skillCurrent');
     const skillMenu = document.getElementById('skillMenu');
-    const history = [];
 
     function initChips() {
       for (const text of suggestions) {
-        const btn1 = makeChip(text);
-        const btn2 = makeChip(text);
-        desktopChips.appendChild(btn1);
-        mobileChips.appendChild(btn2);
+        desktopChips.appendChild(makeChip(text));
       }
     }
 
@@ -673,6 +762,7 @@
       btn.textContent = text;
       btn.onclick = () => {
         inputEl.value = text;
+        closeSidebarDrawer();
         sendMessage();
       };
       return btn;
@@ -765,6 +855,112 @@
       messagesEl.appendChild(wrapper);
       messagesEl.scrollTop = messagesEl.scrollHeight;
       return wrapper;
+    }
+
+    function getWelcomeMessage() {
+      return { role: 'assistant', content: `## 你好，我是销数通 AI Copilot\n你可以直接问我销售经营、客户投放、线索转化、ROI、余额、逾期应收等问题。\n\n例如：\n- 本月客户消耗 Top10 是谁？\n- 哪些客户消耗高但没有订单？\n- 线索通和信息流广告哪个效果更好？\n- 哪些客户适合追加预算？`, meta: null };
+    }
+
+    function createSession(title = '新会话') {
+      const now = Date.now();
+      return {
+        id: `session_${now}_${Math.random().toString(36).slice(2, 8)}`,
+        title,
+        createdAt: now,
+        updatedAt: now,
+        history: [],
+        messages: [getWelcomeMessage()]
+      };
+    }
+
+    function loadSessions() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) appState = JSON.parse(raw);
+      } catch {}
+      if (!appState.sessions || !appState.sessions.length) {
+        const session = createSession();
+        appState = { currentSessionId: session.id, sessions: [session] };
+      }
+      if (!appState.sessions.some(session => session.id === appState.currentSessionId)) {
+        appState.currentSessionId = appState.sessions[0].id;
+      }
+    }
+
+    function saveSessions() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(appState)); } catch {}
+    }
+
+    function getCurrentSession() {
+      let session = appState.sessions.find(item => item.id === appState.currentSessionId);
+      if (!session) {
+        session = createSession();
+        appState.sessions.unshift(session);
+        appState.currentSessionId = session.id;
+      }
+      return session;
+    }
+
+    function formatSessionTime(ts) {
+      const date = new Date(ts);
+      const today = new Date();
+      const sameDay = date.toDateString() === today.toDateString();
+      if (sameDay) return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      return `${date.getMonth() + 1}-${date.getDate()} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    function renderSessionList() {
+      sessionListEl.innerHTML = '';
+      const sessions = [...appState.sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+      for (const session of sessions) {
+        const btn = document.createElement('button');
+        btn.className = `session-item${session.id === appState.currentSessionId ? ' active' : ''}`;
+        btn.type = 'button';
+        btn.innerHTML = `<div class="session-title">${escapeHtml(session.title || '新会话')}</div><div class="session-meta">${escapeHtml(formatSessionTime(session.updatedAt))}</div>`;
+        btn.onclick = () => setCurrentSession(session.id);
+        sessionListEl.appendChild(btn);
+      }
+    }
+
+    function renderCurrentSession() {
+      [...messagesEl.querySelectorAll('.msg')].forEach(el => el.remove());
+      const session = getCurrentSession();
+      for (const message of session.messages) {
+        appendMessage(message.role, message.content, message.meta);
+      }
+      renderSessionList();
+    }
+
+    function setCurrentSession(sessionId) {
+      appState.currentSessionId = sessionId;
+      saveSessions();
+      renderCurrentSession();
+      closeSidebarDrawer();
+    }
+
+    function renameSessionFromFirstQuestion(session, text) {
+      if (session.title !== '新会话') return;
+      const title = text.replace(/\s+/g, ' ').trim().slice(0, 18);
+      session.title = title || '新会话';
+    }
+
+    function newSession() {
+      const session = createSession();
+      appState.sessions.unshift(session);
+      appState.currentSessionId = session.id;
+      saveSessions();
+      renderCurrentSession();
+      closeSidebarDrawer();
+      inputEl.focus();
+    }
+
+    function clearCurrentSession() {
+      const session = getCurrentSession();
+      session.history = [];
+      session.messages = [getWelcomeMessage()];
+      session.updatedAt = Date.now();
+      saveSessions();
+      renderCurrentSession();
     }
 
     function createCard(title) {
@@ -960,30 +1156,54 @@
     async function sendMessage() {
       const text = inputEl.value.trim();
       if (!text || sendBtn.disabled) return;
+      const session = getCurrentSession();
+      const sessionId = session.id;
+      const userMessage = { role: 'user', content: text, meta: null };
+      session.messages.push(userMessage);
       appendMessage('user', text);
+      renameSessionFromFirstQuestion(session, text);
+      session.updatedAt = Date.now();
       inputEl.value = '';
       autoResize();
       sendBtn.disabled = true;
       skillPicker.classList.remove('open');
+      saveSessions();
+      renderSessionList();
       const loadingText = selectedSkill === 'auto'
         ? '正在理解问题并选择合适的销售分析技能...'
         : `正在使用「${getSkillLabel(selectedSkill)}」技能处理...`;
-      const loading = appendMessage('assistant', `<span class="typing">${escapeHtml(loadingText)}</span>`);
+      const loading = appState.currentSessionId === sessionId
+        ? appendMessage('assistant', `<span class="typing">${escapeHtml(loadingText)}</span>`)
+        : null;
       try {
         const resp = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, history, skill: selectedSkill })
+          body: JSON.stringify({ message: text, history: session.history, skill: selectedSkill })
         });
         const data = await resp.json();
-        loading.remove();
+        if (loading) loading.remove();
         if (!resp.ok || data.error) throw new Error(data.error || '请求失败');
-        appendMessage('assistant', data.answer, data);
-        history.push({ role: 'user', content: text });
-        history.push({ role: 'assistant', content: data.answer });
+        const assistantMessage = { role: 'assistant', content: data.answer, meta: data };
+        session.messages.push(assistantMessage);
+        session.history.push({ role: 'user', content: text });
+        session.history.push({ role: 'assistant', content: data.answer });
+        session.updatedAt = Date.now();
+        saveSessions();
+        renderSessionList();
+        if (appState.currentSessionId === sessionId) {
+          appendMessage('assistant', data.answer, data);
+        }
       } catch (err) {
-        loading.remove();
-        appendMessage('assistant', `## 请求失败\n${err.message}\n\n请检查服务是否运行，以及 MiniMax API 环境变量是否配置正确。`);
+        if (loading) loading.remove();
+        const errorContent = `## 请求失败\n${err.message}\n\n请检查服务是否运行，以及 MiniMax API 环境变量是否配置正确。`;
+        session.messages.push({ role: 'assistant', content: errorContent, meta: null });
+        session.updatedAt = Date.now();
+        saveSessions();
+        renderSessionList();
+        if (appState.currentSessionId === sessionId) {
+          appendMessage('assistant', errorContent);
+        }
       } finally {
         sendBtn.disabled = false;
         inputEl.focus();
@@ -1017,11 +1237,10 @@
         skillPicker.classList.remove('open');
       }
     });
-    clearBtn.onclick = () => {
-      [...messagesEl.querySelectorAll('.msg')].forEach(el => el.remove());
-      history.length = 0;
-      appendWelcome();
-    };
+    newSessionBtn.onclick = newSession;
+    clearBtn.onclick = clearCurrentSession;
+    sidebarToggleBtn.onclick = openSidebarDrawer;
+    sidebarOverlay.onclick = closeSidebarDrawer;
     inputEl.addEventListener('input', autoResize);
     inputEl.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -1030,14 +1249,22 @@
       }
     });
 
-    function appendWelcome() {
-      appendMessage('assistant', `## 你好，我是销售经营 AI Copilot\n你可以直接问我销售经营、客户投放、线索转化、ROI、余额、逾期应收等问题。\n\n例如：\n- 本月客户消耗 Top10 是谁？\n- 哪些客户消耗高但没有订单？\n- 线索通和信息流广告哪个效果更好？\n- 哪些客户适合追加预算？`);
+    function openSidebarDrawer() {
+      sidebarEl.classList.add('open');
+      sidebarOverlay.classList.add('show');
+    }
+
+    function closeSidebarDrawer() {
+      sidebarEl.classList.remove('open');
+      sidebarOverlay.classList.remove('show');
     }
 
     initChips();
     initSkillPicker();
+    loadSessions();
+    renderCurrentSession();
+    saveSessions();
     loadHealth();
-    appendWelcome();
   </script>
 </body>
 </html>

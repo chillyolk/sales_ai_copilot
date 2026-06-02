@@ -184,7 +184,7 @@ def extract_json(text: str) -> dict[str, Any]:
 
 def is_safe_select(sql: str) -> bool:
     normalized = re.sub(r"\s+", " ", sql.strip()).lower()
-    if not normalized.startswith("select "):
+    if not (normalized.startswith("select ") or normalized.startswith("with ")):
         return False
     forbidden = [" insert ", " update ", " delete ", " drop ", " alter ", " create ", " attach ", " detach ", " pragma ", " vacuum ", " replace "]
     padded = f" {normalized} "
@@ -342,6 +342,83 @@ def is_destructive_or_write_request(question: str) -> bool:
     return any(term in q or term in question for term in dangerous_terms)
 
 
+def extract_customer_name_for_trend(question: str) -> Optional[str]:
+    patterns = [
+        r"客户名称(?:为|是|=)(.+?)(?:的|每日|每天|日|$)",
+        r"客户(?:为|是|=)(.+?)(?:的|每日|每天|日|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, question)
+        if match:
+            name = match.group(1).strip(" ，,。？?\"'")
+            return name or None
+    return None
+
+
+def customer_daily_cost_trend_skill(question: str) -> Optional[dict[str, Any]]:
+    if not (("趋势" in question or "折线" in question) and ("每日" in question or "每天" in question or "日" in question) and "消耗" in question):
+        return None
+    customer_name = extract_customer_name_for_trend(question)
+    if not customer_name:
+        return None
+    with DB_LOCK:
+        month_row = DB.execute(f'SELECT MAX(stat_month) AS stat_month FROM "{TABLE_NAME}"').fetchone()
+    stat_month = month_row["stat_month"]
+    sql = f'''
+    SELECT stat_date,
+           ROUND(SUM(cost_amount), 2) AS cost_amount
+    FROM "{TABLE_NAME}"
+    WHERE stat_month = ?
+      AND (customer_name LIKE ? OR customer_account_name LIKE ?)
+    GROUP BY stat_date
+    ORDER BY stat_date
+    '''
+    like_name = f"%{customer_name}%"
+    with DB_LOCK:
+        rows = [dict(row) for row in DB.execute(sql, (stat_month, like_name, like_name)).fetchall()]
+    if not rows:
+        return block_response(
+            intent="data_query",
+            skill="sql_query",
+            answer=f"没有在 {stat_month} 找到客户“{customer_name}”的每日消耗数据。",
+            blocks=[{"type": "summary", "title": "未找到数据", "content": f"没有在 {stat_month} 找到客户“{customer_name}”的每日消耗数据。"}],
+            debug={"sql": sql, "reason": "按客户名称和最新月份查询每日消耗趋势。"},
+            sql=sql,
+            reason="按客户名称和最新月份查询每日消耗趋势。",
+            columns=["stat_date", "cost_amount"],
+            rows=[],
+        )
+    total_cost = sum(float(row["cost_amount"] or 0) for row in rows)
+    avg_cost = total_cost / len(rows) if rows else 0
+    max_row = max(rows, key=lambda row: float(row["cost_amount"] or 0))
+    chart_items = [{"label": row["stat_date"][5:], "value": row["cost_amount"]} for row in rows]
+    table_rows = [{"日期": row["stat_date"], "消耗金额": format_amount(row["cost_amount"])} for row in rows]
+    answer = f"{customer_name} 在 {stat_month} 共 {len(rows)} 天有消耗记录，总消耗 {format_amount(total_cost)}，日均消耗 {format_amount(avg_cost)}，最高消耗日为 {max_row['stat_date']}，消耗 {format_amount(max_row['cost_amount'])}。"
+    blocks = [
+        {"type": "summary", "title": f"{customer_name} 每日消耗趋势", "content": answer},
+        {"type": "kpi_cards", "items": [
+            {"label": "统计月份", "value": stat_month},
+            {"label": "总消耗", "value": format_amount(total_cost)},
+            {"label": "日均消耗", "value": format_amount(avg_cost)},
+            {"label": "最高消耗日", "value": max_row["stat_date"]},
+        ]},
+        {"type": "chart", "title": f"{stat_month} 每日消耗折线图", "chartType": "line", "data": {"items": chart_items}},
+        table_block("每日消耗明细", ["日期", "消耗金额"], table_rows),
+        {"type": "followups", "items": ["分析这个客户消耗波动原因", "对比这个客户上月消耗", "生成这个客户的拜访话术"]},
+    ]
+    return block_response(
+        intent="data_query",
+        skill="sql_query",
+        answer=answer,
+        blocks=blocks,
+        debug={"sql": sql, "reason": f"识别客户名称“{customer_name}”，默认取最新月份 {stat_month}，按日期聚合 cost_amount。"},
+        sql=sql,
+        reason=f"识别客户名称“{customer_name}”，默认取最新月份 {stat_month}，按日期聚合 cost_amount。",
+        columns=["stat_date", "cost_amount"],
+        rows=rows,
+    )
+
+
 def chat_cache_key(skill: str, question: str, history: list[dict[str, str]]) -> str:
     recent = history[-6:] if isinstance(history, list) else []
     return json.dumps({"skill": skill, "question": question, "history": recent}, ensure_ascii=False, sort_keys=True)
@@ -351,9 +428,422 @@ def clone_response(response: dict[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(response, ensure_ascii=False))
 
 
+DIMENSION_REGISTRY = {
+    "stat_date": "统计日期",
+    "stat_month": "统计月份",
+    "customer_name": "客户名称",
+    "customer_account_name": "客户资金账户名称",
+    "brand_name": "汽车品牌",
+    "ad_product_name": "广告产品",
+    "ad_product_type": "广告产品类型",
+    "sales_name": "销售",
+    "sales_department_name": "销售部门",
+    "region_name": "大区",
+    "province_name": "省份",
+    "city_name": "城市",
+}
+
+METRIC_REGISTRY = {
+    "cost_amount": {"label": "广告消耗金额", "expression": "SUM(cost_amount)", "format": "currency"},
+    "recharge_amount": {"label": "充值金额", "expression": "SUM(recharge_amount)", "format": "currency"},
+    "confirmed_revenue_amount": {"label": "确认收入", "expression": "SUM(confirmed_revenue_amount)", "format": "currency"},
+    "received_amount": {"label": "回款", "expression": "SUM(received_amount)", "format": "currency"},
+    "lead_cnt": {"label": "线索量", "expression": "SUM(lead_cnt)", "format": "number"},
+    "valid_lead_cnt": {"label": "有效线索", "expression": "SUM(valid_lead_cnt)", "format": "number"},
+    "order_cnt": {"label": "订单", "expression": "SUM(order_cnt)", "format": "number"},
+    "gmv_amount": {"label": "GMV", "expression": "SUM(gmv_amount)", "format": "currency"},
+    "overdue_receivable_amount": {"label": "逾期应收", "expression": "SUM(overdue_receivable_amount)", "format": "currency"},
+    "roi": {"label": "ROI", "expression": "SUM(gmv_amount) / NULLIF(SUM(cost_amount), 0)", "format": "decimal"},
+    "cpl": {"label": "CPL", "expression": "SUM(cost_amount) / NULLIF(SUM(valid_lead_cnt), 0)", "format": "currency"},
+    "ctr": {"label": "CTR", "expression": "SUM(click_cnt) / NULLIF(SUM(impression_cnt), 0)", "format": "percent"},
+}
+
+ALLOWED_ANALYSIS_TYPES = {"trend", "ranking", "summary", "comparison", "intersection_comparison"}
+ALLOWED_OPERATORS = {"eq", "contains", "in", "not_null"}
+
+
+def validate_month_number(month: int) -> int:
+    if month < 1 or month > 12:
+        raise ValueError(f"月份必须在 1 到 12 之间，当前输入为 {month} 月。")
+    return month
+
+
+def latest_year_month(month: int) -> str:
+    month = validate_month_number(month)
+    with DB_LOCK:
+        row = DB.execute(f'SELECT MAX(stat_date) AS max_date FROM "{TABLE_NAME}"').fetchone()
+    year = datetime.strptime(row["max_date"], "%Y-%m-%d").year
+    return f"{year}-{month:02d}"
+
+
+def extract_month_value(question: str) -> Optional[str]:
+    match = re.search(r"(\d{4})[-年](\d{1,2})月?", question)
+    if match:
+        month = validate_month_number(int(match.group(2)))
+        return f"{int(match.group(1)):04d}-{month:02d}"
+    match = re.search(r"(\d{1,2})\s*月份?", question)
+    if match:
+        return latest_year_month(int(match.group(1)))
+    if "5月" in question or "五月" in question:
+        return latest_year_month(5)
+    return None
+
+
+def generate_query_plan(question: str, history: list[dict[str, str]]) -> Optional[dict[str, Any]]:
+    plan = generate_rule_query_plan(question)
+    if plan:
+        return plan
+    if not MINIMAX_API_KEY or not MINIMAX_API_URL:
+        return None
+    system = f"""
+你是数据分析规划器。请把用户问题转成 Query Plan JSON，不要生成 SQL。
+只允许表：{TABLE_NAME}
+可用维度字段：{', '.join(DIMENSION_REGISTRY.keys())}
+可用指标：{', '.join(METRIC_REGISTRY.keys())}
+analysis_type 只能是 trend/ranking/summary/comparison/intersection_comparison。
+filter op 只能是 eq/contains/in/not_null。
+返回 JSON，字段包括 analysis_type,time_range,filters,dimensions,metrics,grain,chart,output_columns,order_by,limit,reason。
+如果用户说“5月份”，按 2026-05 理解。
+""".strip()
+    messages = [{"role": "system", "content": system}]
+    messages.extend(history[-4:] if isinstance(history, list) else [])
+    messages.append({"role": "user", "content": question})
+    parsed = extract_json(minimax_chat(messages, temperature=0.1))
+    return parsed if isinstance(parsed, dict) else None
+
+
+def generate_rule_query_plan(question: str) -> Optional[dict[str, Any]]:
+    month = extract_month_value(question)
+    if ("趋势" in question or "折线" in question) and "消耗" in question:
+        customer = extract_customer_name_for_trend(question)
+        if customer:
+            return {
+                "version": "1.0",
+                "analysis_type": "trend",
+                "question_rewrite": f"查询{month or '最新月份'}{customer}每日广告消耗趋势",
+                "time_range": {"type": "month", "field": "stat_month", "value": month or "latest_month"},
+                "filters": [{"field": "customer_name", "op": "contains", "value": customer}],
+                "dimensions": ["stat_date", "stat_month", "customer_name"],
+                "metrics": [{"name": "cost_amount", "aggregation": "sum", "alias": "广告消耗金额"}],
+                "grain": "day",
+                "chart": {"need_chart": True, "chart_type": "line", "x": "stat_date", "y": "cost_amount", "series": None},
+                "output_columns": ["stat_date", "stat_month", "customer_name", "cost_amount"],
+                "order_by": [{"field": "stat_date", "direction": "asc"}],
+                "limit": 100,
+                "reason": "识别为客户每日消耗趋势分析。",
+            }
+    if "消耗" in question and ("最高" in question or "top" in question.lower() or "Top" in question) and "客户" in question:
+        limit_match = re.search(r"(\d+)\s*个", question)
+        limit = int(limit_match.group(1)) if limit_match else 10
+        return {
+            "version": "1.0",
+            "analysis_type": "ranking",
+            "question_rewrite": f"查询{month or '最新月份'}消耗最高的{limit}个客户",
+            "time_range": {"type": "month", "field": "stat_month", "value": month or "latest_month"},
+            "filters": [],
+            "dimensions": ["customer_name"],
+            "metrics": [{"name": "cost_amount", "aggregation": "sum", "alias": "广告消耗金额"}],
+            "grain": "customer",
+            "chart": {"need_chart": True, "chart_type": "bar", "x": "customer_name", "y": "cost_amount"},
+            "output_columns": ["customer_name", "cost_amount"],
+            "order_by": [{"metric": "cost_amount", "direction": "desc"}],
+            "limit": limit,
+            "reason": "识别为客户消耗排名分析。",
+        }
+    if "相同品牌" in question and "消耗" in question and ("对比" in question or "比较" in question):
+        pair_match = re.search(r"(?:分析|对比)?(?:\d{1,2}月份?)?(.+?)和(.+?)(?:投放)?相同品牌", question)
+        if pair_match:
+            names = [pair_match.group(1).strip(" ，,。的"), pair_match.group(2).strip(" ，,。的")]
+        else:
+            names = re.findall(r"([\u4e00-\u9fa5A-Za-z0-9#（）()·_-]{2,40}?客户|[\u4e00-\u9fa5A-Za-z0-9#（）()·_-]{2,40}?服务商)", question)
+            names = [name for name in dict.fromkeys(names) if "客户名称" not in name and "相同品牌" not in name]
+        if len(names) >= 2:
+            return {
+                "version": "1.0",
+                "analysis_type": "intersection_comparison",
+                "question_rewrite": f"对比{month or '最新月份'}{names[0]}和{names[1]}相同品牌广告消耗金额",
+                "time_range": {"type": "month", "field": "stat_month", "value": month or "latest_month"},
+                "filters": [
+                    {"field": "customer_name", "op": "in", "value": names[:2]},
+                    {"field": "brand_name", "op": "not_null", "value": True},
+                ],
+                "dimensions": ["brand_name", "customer_name"],
+                "metrics": [{"name": "cost_amount", "aggregation": "sum", "alias": "广告消耗金额"}],
+                "grain": "brand_customer",
+                "comparison": {"enabled": True, "type": "entity_compare", "compare_on": ["brand_name"], "mode": "same_dimension_values"},
+                "chart": {"need_chart": True, "chart_type": "bar", "fallback_chart_type": "bar", "x": "brand_name", "y": "cost_amount", "series": "customer_name"},
+                "output_columns": ["brand_name", "customer_name", "cost_amount"],
+                "limit": 200,
+                "reason": "识别为两个客户相同品牌广告消耗对比。",
+            }
+    return None
+
+
+def normalize_query_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    if plan.get("analysis_type") not in ALLOWED_ANALYSIS_TYPES:
+        raise ValueError("暂不支持该分析类型")
+    time_range = plan.setdefault("time_range", {})
+    if time_range.get("value") == "latest_month" or not time_range.get("value"):
+        with DB_LOCK:
+            row = DB.execute(f'SELECT MAX(stat_month) AS stat_month FROM "{TABLE_NAME}"').fetchone()
+        time_range["value"] = row["stat_month"]
+        time_range["field"] = "stat_month"
+    if time_range.get("field") == "stat_month" and time_range.get("value"):
+        match = re.fullmatch(r"(\d{4})-(\d{2})", str(time_range["value"]))
+        if not match:
+            raise ValueError(f"不支持的月份格式：{time_range['value']}")
+        validate_month_number(int(match.group(2)))
+    for field in plan.get("dimensions", []):
+        field_name = field.get("field") if isinstance(field, dict) else field
+        if field_name not in DIMENSION_REGISTRY:
+            raise ValueError(f"不支持的维度字段：{field_name}")
+    for metric in plan.get("metrics", []):
+        name = metric.get("name") or metric.get("field")
+        if name not in METRIC_REGISTRY:
+            raise ValueError(f"不支持的指标：{name}")
+    for flt in plan.get("filters", []):
+        if flt.get("field") not in DIMENSION_REGISTRY and flt.get("field") not in METRIC_REGISTRY:
+            raise ValueError(f"不支持的筛选字段：{flt.get('field')}")
+        if flt.get("op") not in ALLOWED_OPERATORS:
+            raise ValueError(f"不支持的筛选操作：{flt.get('op')}")
+    plan["limit"] = min(max(int(plan.get("limit") or 100), 1), 500)
+    return plan
+
+
+def compile_plan_to_sql(plan: dict[str, Any]) -> tuple[str, list[Any]]:
+    analysis_type = plan["analysis_type"]
+    if analysis_type == "intersection_comparison":
+        return compile_intersection_comparison_sql(plan)
+    dimensions = [item.get("field") if isinstance(item, dict) else item for item in plan.get("dimensions", [])]
+    metrics = plan.get("metrics", [])
+    select_parts = [f'{field} AS "{DIMENSION_REGISTRY[field]}"' for field in dimensions]
+    for metric in metrics:
+        name = metric.get("name") or metric.get("field")
+        label = metric.get("alias") or METRIC_REGISTRY[name]["label"]
+        select_parts.append(f'ROUND({METRIC_REGISTRY[name]["expression"]}, 4) AS "{label}"')
+    sql = [f'SELECT {", ".join(select_parts)} FROM "{TABLE_NAME}"']
+    where, params = compile_plan_where(plan)
+    if where:
+        sql.append("WHERE " + " AND ".join(where))
+    if dimensions:
+        sql.append("GROUP BY " + ", ".join(dimensions))
+    order = plan.get("order_by") or []
+    if order:
+        item = order[0]
+        field = item.get("field") or item.get("metric")
+        direction = "DESC" if str(item.get("direction", "asc")).lower() == "desc" else "ASC"
+        if field in dimensions:
+            sql.append(f"ORDER BY {field} {direction}")
+        elif metrics:
+            metric_name = metrics[0].get("alias") or METRIC_REGISTRY[metrics[0].get("name")]["label"]
+            sql.append(f'ORDER BY "{metric_name}" {direction}')
+    sql.append(f"LIMIT {int(plan['limit'])}")
+    return "\n".join(sql), params
+
+
+def compile_plan_where(plan: dict[str, Any]) -> tuple[list[str], list[Any]]:
+    where = []
+    params = []
+    time_range = plan.get("time_range") or {}
+    if time_range.get("field") == "stat_month" and time_range.get("value"):
+        where.append("stat_month = ?")
+        params.append(time_range["value"])
+    for flt in plan.get("filters", []):
+        field = flt["field"]
+        op = flt["op"]
+        if op == "contains":
+            where.append(f"{field} LIKE ?")
+            params.append(f"%{flt.get('value', '')}%")
+        elif op == "eq":
+            where.append(f"{field} = ?")
+            params.append(flt.get("value"))
+        elif op == "in":
+            values = list(flt.get("value") or [])
+            placeholders = ", ".join(["?"] * len(values))
+            where.append(f"{field} IN ({placeholders})")
+            params.extend(values)
+        elif op == "not_null":
+            where.append(f"{field} IS NOT NULL AND {field} != ''")
+    return where, params
+
+
+def compile_intersection_comparison_sql(plan: dict[str, Any]) -> tuple[str, list[Any]]:
+    time_value = plan.get("time_range", {}).get("value")
+    customer_filter = next((flt for flt in plan.get("filters", []) if flt.get("field") == "customer_name" and flt.get("op") == "in"), None)
+    customers = list((customer_filter or {}).get("value") or [])[:2]
+    if len(customers) < 2:
+        raise ValueError("共同品牌对比需要两个客户名称")
+    sql = f'''
+WITH customer_brand_cost AS (
+  SELECT brand_name, customer_name, ROUND(SUM(cost_amount), 2) AS cost_amount
+  FROM "{TABLE_NAME}"
+  WHERE stat_month = ?
+    AND customer_name IN (?, ?)
+    AND brand_name IS NOT NULL
+    AND brand_name != ''
+  GROUP BY brand_name, customer_name
+),
+common_brands AS (
+  SELECT brand_name
+  FROM customer_brand_cost
+  GROUP BY brand_name
+  HAVING COUNT(DISTINCT customer_name) = 2
+)
+SELECT c.brand_name AS "汽车品牌",
+       c.customer_name AS "客户名称",
+       c.cost_amount AS "广告消耗金额"
+FROM customer_brand_cost c
+JOIN common_brands b ON c.brand_name = b.brand_name
+ORDER BY c.brand_name ASC, c.cost_amount DESC
+LIMIT {int(plan['limit'])}
+'''
+    return sql, [time_value, customers[0], customers[1]]
+
+
+def execute_sql_with_params(sql: str, params: list[Any]) -> tuple[list[str], list[dict[str, Any]]]:
+    if not is_safe_select(sql):
+        raise ValueError("生成的 SQL 不安全或不是 SELECT 查询")
+    with DB_LOCK:
+        cur = DB.execute(sql, params)
+        rows = [dict(row) for row in cur.fetchall()]
+        columns = [desc[0] for desc in cur.description or []]
+    return columns, rows
+
+
+def data_analysis_pipeline(question: str, history: list[dict[str, str]]) -> Optional[dict[str, Any]]:
+    plan = generate_query_plan(question, history)
+    if not plan:
+        return None
+    plan = normalize_query_plan(plan)
+    sql, params = compile_plan_to_sql(plan)
+    columns, rows = execute_sql_with_params(sql, params)
+    return build_analysis_blocks(question, plan, sql, params, columns, rows)
+
+
+def build_analysis_blocks(question: str, plan: dict[str, Any], sql: str, params: list[Any], columns: list[str], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    analysis_type = plan["analysis_type"]
+    if analysis_type == "trend":
+        return build_trend_blocks(question, plan, sql, params, columns, rows)
+    if analysis_type == "intersection_comparison":
+        return build_intersection_comparison_blocks(question, plan, sql, params, columns, rows)
+    return build_generic_analysis_blocks(question, plan, sql, params, columns, rows)
+
+
+def build_generic_analysis_blocks(question: str, plan: dict[str, Any], sql: str, params: list[Any], columns: list[str], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    metric_label = (plan.get("metrics") or [{}])[0].get("alias") or (columns[-1] if columns else "指标值")
+    dimension_label = columns[0] if columns else "维度"
+    chart_items = [{"label": str(row.get(dimension_label, ""))[:14], "value": row.get(metric_label, 0)} for row in rows[:20]]
+    total = sum(float(row.get(metric_label) or 0) for row in rows)
+    answer = f"已按“{dimension_label}”统计{metric_label}，共返回 {len(rows)} 条结果，总{metric_label} {format_amount(total)}。"
+    table_rows = []
+    for row in rows:
+        item = {}
+        for col in columns:
+            value = row.get(col)
+            item[col] = format_amount(value) if col == metric_label else value
+        table_rows.append(item)
+    blocks = [
+        {"type": "summary", "title": "数据分析结论", "content": answer},
+        {"type": "chart", "title": plan.get("chart", {}).get("title") or "排行图", "chartType": plan.get("chart", {}).get("chart_type", "bar"), "data": {"items": chart_items}},
+        table_block("明细数据", columns, table_rows),
+        {"type": "followups", "items": ["继续分析这些结果的风险", "按销售负责人汇总", "换一个指标继续看"]},
+    ]
+    return block_response(
+        intent="data_query",
+        skill="sql_query",
+        answer=answer,
+        blocks=blocks,
+        debug={"plan": plan, "sql": sql, "params": params, "row_count": len(rows), "reason": plan.get("reason", "")},
+        sql=sql,
+        reason=plan.get("reason", ""),
+        columns=columns,
+        rows=rows,
+    )
+
+
+def build_trend_blocks(question: str, plan: dict[str, Any], sql: str, params: list[Any], columns: list[str], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    metric_label = (plan.get("metrics") or [{}])[0].get("alias") or "指标值"
+    customer = next((flt.get("value") for flt in plan.get("filters", []) if flt.get("field") == "customer_name"), "目标客户")
+    values = [float(row.get(metric_label) or 0) for row in rows]
+    total = sum(values)
+    avg = total / len(values) if values else 0
+    max_idx = values.index(max(values)) if values else -1
+    max_day = rows[max_idx].get("统计日期") if max_idx >= 0 else "-"
+    chart_items = [{"label": str(row.get("统计日期", ""))[5:], "value": row.get(metric_label, 0)} for row in rows]
+    answer = f"{customer} 在 {plan['time_range']['value']} 共 {len(rows)} 天有数据，总{metric_label} {format_amount(total)}，日均 {format_amount(avg)}，最高日期为 {max_day}。"
+    table_rows = [{"统计日期": row.get("统计日期"), "统计月份": row.get("统计月份"), "客户名称": row.get("客户名称"), metric_label: format_amount(row.get(metric_label) or 0)} for row in rows]
+    blocks = [
+        {"type": "summary", "title": plan.get("chart", {}).get("title") or "趋势分析", "content": answer},
+        {"type": "kpi_cards", "items": [
+            {"label": "统计月份", "value": plan["time_range"]["value"]},
+            {"label": f"总{metric_label}", "value": format_amount(total)},
+            {"label": f"日均{metric_label}", "value": format_amount(avg)},
+            {"label": "最高日期", "value": str(max_day)},
+        ]},
+        {"type": "chart", "title": plan.get("chart", {}).get("title") or "趋势图", "chartType": "line", "data": {"items": chart_items}},
+        table_block("明细数据", list(table_rows[0].keys()) if table_rows else [], table_rows),
+        {"type": "followups", "items": ["对比上月", "分析这个客户消耗波动原因", "查看这个客户按品牌的消耗构成"]},
+    ]
+    return block_response(
+        intent="data_query",
+        skill="sql_query",
+        answer=answer,
+        blocks=blocks,
+        debug={"plan": plan, "sql": sql, "params": params, "row_count": len(rows), "reason": plan.get("reason", "")},
+        sql=sql,
+        reason=plan.get("reason", ""),
+        columns=columns,
+        rows=rows,
+    )
+
+
+def build_intersection_comparison_blocks(question: str, plan: dict[str, Any], sql: str, params: list[Any], columns: list[str], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    brands = sorted({row.get("汽车品牌") for row in rows})
+    customers = sorted({row.get("客户名称") for row in rows})
+    pivot = []
+    totals = {customer: 0.0 for customer in customers}
+    for brand in brands:
+        row_out = {"汽车品牌": brand}
+        vals = []
+        for customer in customers:
+            value = sum(float(row.get("广告消耗金额") or 0) for row in rows if row.get("汽车品牌") == brand and row.get("客户名称") == customer)
+            totals[customer] = totals.get(customer, 0.0) + value
+            row_out[f"{customer}消耗"] = format_amount(value)
+            vals.append((customer, value))
+        if vals:
+            winner, max_value = max(vals, key=lambda item: item[1])
+            min_value = min(value for _, value in vals)
+            row_out["差额"] = format_amount(max_value - min_value)
+            row_out["高消耗客户"] = winner
+        pivot.append(row_out)
+    chart_items = [{"label": brand, "value": sum(float(row.get("广告消耗金额") or 0) for row in rows if row.get("汽车品牌") == brand)} for brand in brands]
+    answer = f"共找到 {len(brands)} 个共同投放品牌。" + "；".join([f"{customer}共同品牌消耗{format_amount(total)}" for customer, total in totals.items()])
+    blocks = [
+        {"type": "summary", "title": "相同品牌消耗对比", "content": answer},
+        {"type": "kpi_cards", "items": [{"label": "共同品牌数", "value": len(brands)}] + [{"label": f"{customer}消耗", "value": format_amount(total)} for customer, total in totals.items()]},
+        {"type": "chart", "title": "共同品牌总消耗排行", "chartType": "bar", "data": {"items": chart_items}},
+        table_block("相同品牌消耗对比明细", list(pivot[0].keys()) if pivot else [], pivot),
+        {"type": "followups", "items": ["继续对比这两个客户相同品牌的ROI", "查看这两个客户不同品牌的投放差异", "分析差异最大的品牌对应的广告产品结构"]},
+    ]
+    return block_response(
+        intent="data_query",
+        skill="sql_query",
+        answer=answer,
+        blocks=blocks,
+        debug={"plan": plan, "sql": sql, "params": params, "row_count": len(rows), "reason": plan.get("reason", "")},
+        sql=sql,
+        reason=plan.get("reason", ""),
+        columns=columns,
+        rows=rows,
+    )
+
+
 def sql_query_skill(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
     if is_destructive_or_write_request(question):
         raise ValueError("当前应用仅支持只读数据查询和分析，不支持修改、写入或删除数据。")
+    analysis_result = data_analysis_pipeline(question, history)
+    if analysis_result:
+        return analysis_result
     key = chat_cache_key("sql_query", question, history)
     with CHAT_CACHE_LOCK:
         cached = CHAT_CACHE.get(key)

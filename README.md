@@ -25,6 +25,7 @@
 - 自然语言问数
 - 普通销售对话与拜访话术建议
 - 意图识别与技能路由
+- 输入框左侧手动技能选择：自动 / 普通对话 / 数据查询 / 归因分析
 - 销售经营数据分析
 - 客户投放效果诊断
 - 月环比消耗下降客户归因分析
@@ -259,6 +260,7 @@ The application first detects the user's intent. General sales communication que
 - Natural language data analysis
 - General sales conversation and customer visit talking points
 - Intent detection and skill routing
+- Manual skill selector in the input box: Auto / General Chat / Data Query / Attribution Analysis
 - Sales performance analysis
 - Customer advertising performance diagnosis
 - Month-over-month spend decline attribution analysis

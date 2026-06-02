@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -59,6 +60,9 @@ FIELD_DESCRIPTIONS = {
 
 DB = sqlite3.connect(":memory:", check_same_thread=False)
 DB.row_factory = sqlite3.Row
+DB_LOCK = threading.RLock()
+CHAT_CACHE_LOCK = threading.RLock()
+CHAT_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def load_csv_to_sqlite() -> list[str]:
@@ -201,9 +205,10 @@ def execute_sql(sql: str) -> tuple[list[str], list[dict[str, Any]]]:
     if not is_safe_select(sql):
         raise ValueError("模型生成的 SQL 不安全或不是 SELECT 查询")
     sql = add_limit(sql)
-    cur = DB.execute(sql)
-    rows = [dict(row) for row in cur.fetchall()]
-    columns = [desc[0] for desc in cur.description or []]
+    with DB_LOCK:
+        cur = DB.execute(sql)
+        rows = [dict(row) for row in cur.fetchall()]
+        columns = [desc[0] for desc in cur.description or []]
     return columns, rows
 
 
@@ -280,6 +285,9 @@ def block_response(
     }
 
 
+SUPPORTED_SKILLS = {"general_chat", "sql_query", "attribution_analysis"}
+
+
 def detect_intent(question: str) -> dict[str, Any]:
     q = question.lower()
     diagnosis_keywords = ["归因", "诊断", "原因", "为什么", "环比", "同比", "下降", "下滑", "波动", "拆解"]
@@ -320,41 +328,73 @@ def table_block(title: str, columns: list[str], rows: list[dict[str, Any]]) -> d
     return {"type": "table", "title": title, "columns": columns, "rows": rows}
 
 
-def sql_query_skill(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
-    if not MINIMAX_API_KEY or not MINIMAX_API_URL:
-        result = local_fallback(question)
-        result.setdefault("intent", "data_query")
-        result.setdefault("skill", "sql_query")
-        result.setdefault("blocks", [
-            {"type": "summary", "title": "查询结论", "content": result.get("answer", "")},
-            table_block("查询结果", result.get("columns", []), result.get("rows", [])),
-        ])
-        result.setdefault("debug", {"sql": result.get("sql", ""), "reason": result.get("reason", "")})
-        return result
-    plan = generate_sql(question, history if isinstance(history, list) else [])
-    sql = add_limit(plan["sql"])
-    columns, rows = execute_sql(sql)
-    answer = summarize(question, sql, plan["reason"], rows)
-    blocks = [
-        {"type": "summary", "title": "查询结论", "content": answer},
-        table_block("查询结果", columns, rows[:100]),
-        {"type": "followups", "items": ["继续分析这些客户的风险", "帮我按销售负责人汇总", "把结果整理成客户跟进清单"]},
+def is_destructive_or_write_request(question: str) -> bool:
+    q = question.lower()
+    dangerous_terms = [
+        "drop", "delete", "update", "insert", "alter", "create", "truncate", "replace", "清空", "删除",
+        "删掉", "移除", "更新", "修改", "写入", "插入", "新增", "创建", "建表", "删表", "清除",
+        "改余额", "修改余额", "更新余额", "调整余额", "改数据", "修改数据", "写数据",
     ]
-    return block_response(
-        intent="data_query",
-        skill="sql_query",
-        answer=answer,
-        blocks=blocks,
-        debug={"sql": sql, "reason": plan["reason"]},
-        sql=sql,
-        reason=plan["reason"],
-        columns=columns,
-        rows=rows,
-    )
+    return any(term in q or term in question for term in dangerous_terms)
+
+
+def chat_cache_key(skill: str, question: str, history: list[dict[str, str]]) -> str:
+    recent = history[-6:] if isinstance(history, list) else []
+    return json.dumps({"skill": skill, "question": question, "history": recent}, ensure_ascii=False, sort_keys=True)
+
+
+def clone_response(response: dict[str, Any]) -> dict[str, Any]:
+    return json.loads(json.dumps(response, ensure_ascii=False))
+
+
+def sql_query_skill(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
+    if is_destructive_or_write_request(question):
+        raise ValueError("当前应用仅支持只读数据查询和分析，不支持修改、写入或删除数据。")
+    key = chat_cache_key("sql_query", question, history)
+    with CHAT_CACHE_LOCK:
+        cached = CHAT_CACHE.get(key)
+        if cached is not None:
+            return clone_response(cached)
+
+        if not MINIMAX_API_KEY or not MINIMAX_API_URL:
+            result = local_fallback(question)
+            result.setdefault("intent", "data_query")
+            result.setdefault("skill", "sql_query")
+            result.setdefault("blocks", [
+                {"type": "summary", "title": "查询结论", "content": result.get("answer", "")},
+                table_block("查询结果", result.get("columns", []), result.get("rows", [])),
+            ])
+            result.setdefault("debug", {"sql": result.get("sql", ""), "reason": result.get("reason", "")})
+            CHAT_CACHE[key] = clone_response(result)
+            return result
+
+        plan = generate_sql(question, history if isinstance(history, list) else [])
+        sql = add_limit(plan["sql"])
+        columns, rows = execute_sql(sql)
+        answer = summarize(question, sql, plan["reason"], rows)
+        blocks = [
+            {"type": "summary", "title": "查询结论", "content": answer},
+            table_block("查询结果", columns, rows[:100]),
+            {"type": "followups", "items": ["继续分析这些客户的风险", "帮我按销售负责人汇总", "把结果整理成客户跟进清单"]},
+        ]
+        result = block_response(
+            intent="data_query",
+            skill="sql_query",
+            answer=answer,
+            blocks=blocks,
+            debug={"sql": sql, "reason": plan["reason"]},
+            sql=sql,
+            reason=plan["reason"],
+            columns=columns,
+            rows=rows,
+        )
+        CHAT_CACHE[key] = clone_response(result)
+        return result
 
 
 def get_latest_months() -> tuple[str, str]:
-    rows = DB.execute(f'SELECT DISTINCT stat_month FROM "{TABLE_NAME}" ORDER BY stat_month DESC LIMIT 2').fetchall()
+    with DB_LOCK:
+        rows = DB.execute(f'SELECT DISTINCT stat_month FROM "{TABLE_NAME}" ORDER BY stat_month DESC LIMIT 2').fetchall()
     if len(rows) < 2:
         raise ValueError("数据不足，无法做月环比分析")
     return rows[0][0], rows[1][0]
@@ -430,7 +470,8 @@ def attribution_analysis_skill(question: str, history: list[dict[str, str]]) -> 
     ORDER BY cost_delta ASC
     LIMIT 30
     '''
-    rows = [dict(row) for row in DB.execute(sql, (current_month, previous_month, current_month, previous_month)).fetchall()]
+    with DB_LOCK:
+        rows = [dict(row) for row in DB.execute(sql, (current_month, previous_month, current_month, previous_month)).fetchall()]
     columns = list(rows[0].keys()) if rows else []
 
     enriched = []
@@ -628,10 +669,23 @@ def build_local_answer(question: str, reason: str, rows: list[dict[str, Any]]) -
 def handle_chat(payload: dict[str, Any]) -> dict[str, Any]:
     question = str(payload.get("message", "")).strip()
     history = payload.get("history", [])
+    requested_skill = str(payload.get("skill", "auto") or "auto").strip()
     if not question:
         raise ValueError("请输入问题")
 
-    route = detect_intent(question)
+    if requested_skill in ("", "auto"):
+        route = detect_intent(question)
+    elif requested_skill in SUPPORTED_SKILLS:
+        route = {
+            "intent": "manual_select",
+            "skill": requested_skill,
+            "requires_data": requested_skill != "general_chat",
+            "confidence": 1.0,
+            "forced": True,
+        }
+    else:
+        raise ValueError(f"不支持的技能：{requested_skill}")
+
     skill = route["skill"]
     if skill == "general_chat":
         result = general_chat_skill(question, history if isinstance(history, list) else [])
@@ -639,8 +693,8 @@ def handle_chat(payload: dict[str, Any]) -> dict[str, Any]:
         result = attribution_analysis_skill(question, history if isinstance(history, list) else [])
     else:
         result = sql_query_skill(question, history if isinstance(history, list) else [])
-    result.setdefault("intent", route["intent"])
-    result.setdefault("skill", skill)
+    result["intent"] = route["intent"]
+    result["skill"] = skill
     result["route"] = route
     return result
 

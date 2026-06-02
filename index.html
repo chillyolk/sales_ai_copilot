@@ -221,14 +221,17 @@
     .user .avatar { background: var(--primary); }
 
     .bubble {
-      max-width: min(780px, 84%);
+      max-width: min(980px, 92%);
+      min-width: 0;
       border: 1px solid var(--border);
       background: #fff;
-      border-radius: 18px;
-      padding: 14px 16px;
-      line-height: 1.65;
+      border-radius: 16px;
+      padding: 12px 14px;
+      line-height: 1.48;
       box-shadow: 0 5px 18px rgba(15, 23, 42, .05);
-      overflow: hidden;
+      overflow: visible;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .user .bubble {
@@ -237,9 +240,9 @@
       border-color: transparent;
     }
 
-    .bubble h1, .bubble h2, .bubble h3 { margin: 10px 0 6px; font-size: 16px; }
-    .bubble p { margin: 0 0 10px; }
-    .bubble ul, .bubble ol { margin: 6px 0 10px; padding-left: 22px; }
+    .bubble h1, .bubble h2, .bubble h3 { margin: 6px 0 4px; font-size: 15px; line-height: 1.35; }
+    .bubble p { margin: 0 0 6px; }
+    .bubble ul, .bubble ol { margin: 4px 0 6px; padding-left: 18px; }
     .bubble code { background: #f1f5f9; border-radius: 6px; padding: 1px 4px; }
 
     .meta-box {
@@ -276,25 +279,34 @@
     }
 
     .table-wrap {
-      margin-top: 12px;
-      overflow: auto;
+      margin-top: 8px;
+      overflow-x: auto;
+      overflow-y: visible;
       border: 1px solid var(--border);
       border-radius: 14px;
-      max-height: 360px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 13px;
+      font-size: 12px;
       background: #fff;
+    }
+
+    .markdown-table {
+      margin: 8px 0 10px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.8);
     }
 
     th, td {
       border-bottom: 1px solid var(--border);
-      padding: 9px 10px;
-      white-space: nowrap;
+      padding: 6px 8px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       text-align: left;
+      min-width: 96px;
+      max-width: 260px;
     }
 
     th {
@@ -333,6 +345,65 @@
       background: transparent;
     }
 
+    .skill-picker {
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .skill-current {
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: #344054;
+      border-radius: 14px;
+      padding: 11px 12px;
+      min-width: 92px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .skill-current.active {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary-2);
+    }
+
+    .skill-menu {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 10px);
+      display: none;
+      gap: 8px;
+      max-width: min(620px, calc(100vw - 36px));
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 12px 36px rgba(15, 23, 42, .16);
+      overflow-x: auto;
+      z-index: 10;
+    }
+
+    .skill-picker.open .skill-menu { display: flex; }
+
+    .skill-option {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: #344054;
+      border-radius: 999px;
+      padding: 8px 11px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .skill-option.selected {
+      color: #fff;
+      border-color: var(--primary);
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+    }
+
     .send {
       border: 0;
       color: #fff;
@@ -349,18 +420,19 @@
       cursor: not-allowed;
     }
 
-    .block-stack { display: grid; gap: 12px; }
+    .block-stack { display: grid; gap: 8px; min-width: 0; }
 
     .bi-card {
+      min-width: 0;
       border: 1px solid var(--border);
       background: linear-gradient(180deg, #ffffff, #fbfdff);
-      border-radius: 16px;
-      padding: 14px;
+      border-radius: 14px;
+      padding: 10px 12px;
     }
 
     .bi-title {
-      margin: 0 0 8px;
-      font-size: 14px;
+      margin: 0 0 5px;
+      font-size: 13px;
       font-weight: 800;
       color: #1f2937;
     }
@@ -368,38 +440,38 @@
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
+      gap: 7px;
     }
 
     .kpi-card {
       border: 1px solid #dbeafe;
       background: #eff6ff;
-      border-radius: 14px;
-      padding: 12px;
+      border-radius: 12px;
+      padding: 8px 10px;
     }
 
-    .kpi-card b { display: block; font-size: 18px; color: #1d4ed8; }
-    .kpi-card span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .kpi-card b { display: block; font-size: 16px; line-height: 1.25; color: #1d4ed8; }
+    .kpi-card span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
 
-    .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
-    .tag-pill { padding: 6px 10px; border-radius: 999px; background: #ecfdf3; color: #027a48; font-size: 12px; font-weight: 700; }
+    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag-pill { padding: 4px 8px; border-radius: 999px; background: #ecfdf3; color: #027a48; font-size: 11px; font-weight: 700; }
 
-    .insight-list, .action-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .insight-list, .action-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
     .insight-list li, .action-list li {
       border: 1px solid var(--border);
       background: #fff;
-      border-radius: 12px;
-      padding: 10px 12px;
+      border-radius: 10px;
+      padding: 7px 9px;
     }
 
-    .bar-chart { display: grid; gap: 10px; }
+    .bar-chart { display: grid; gap: 7px; }
     .bar-row { display: grid; grid-template-columns: minmax(90px, 180px) 1fr auto; gap: 10px; align-items: center; font-size: 12px; }
     .bar-track { height: 10px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
     .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), var(--green)); }
     .bar-value { color: var(--muted); font-variant-numeric: tabular-nums; }
 
-    .followups { display: flex; flex-wrap: wrap; gap: 8px; }
-    .followup-btn { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 8px 10px; cursor: pointer; color: #344054; }
+    .followups { display: flex; flex-wrap: wrap; gap: 6px; }
+    .followup-btn { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 8px; cursor: pointer; color: #344054; font-size: 12px; }
     .followup-btn:hover { background: var(--primary-soft); border-color: var(--primary); }
 
     .mobile-chips { display: none; }
@@ -437,9 +509,9 @@
       }
 
       .bubble {
-        max-width: 88%;
-        padding: 12px 13px;
-        border-radius: 16px;
+        max-width: calc(100vw - 58px);
+        padding: 10px 11px;
+        border-radius: 14px;
       }
 
       .avatar {
@@ -464,7 +536,10 @@
       .bar-row { grid-template-columns: 90px 1fr; }
       .bar-value { grid-column: 2; }
       .composer { padding: 10px; }
-      .composer-inner { border-radius: 16px; }
+      .composer-inner { border-radius: 16px; gap: 7px; }
+      .skill-current { min-width: 58px; max-width: 72px; padding: 10px 8px; overflow: hidden; text-overflow: ellipsis; }
+      .skill-menu { left: 0; max-width: calc(100vw - 20px); padding: 7px; }
+      .skill-option { padding: 7px 9px; font-size: 12px; }
       .send { min-width: 70px; padding: 11px 14px; }
     }
   </style>
@@ -509,6 +584,10 @@
 
       <footer class="composer">
         <div class="composer-inner">
+          <div class="skill-picker" id="skillPicker">
+            <button class="skill-current" id="skillCurrent" type="button">自动</button>
+            <div class="skill-menu" id="skillMenu"></div>
+          </div>
           <textarea id="input" rows="1" placeholder="例如：哪些客户消耗高但没有订单？"></textarea>
           <button class="send" id="sendBtn">发送</button>
         </div>
@@ -528,6 +607,14 @@
       '哪些客户适合追加预算？'
     ];
 
+    const skillOptions = [
+      { value: 'auto', label: '自动' },
+      { value: 'general_chat', label: '普通对话' },
+      { value: 'sql_query', label: '数据查询' },
+      { value: 'attribution_analysis', label: '归因分析' }
+    ];
+    let selectedSkill = 'auto';
+
     const messagesEl = document.getElementById('messages');
     const inputEl = document.getElementById('input');
     const sendBtn = document.getElementById('sendBtn');
@@ -535,6 +622,9 @@
     const statusEl = document.getElementById('status');
     const desktopChips = document.getElementById('desktopChips');
     const mobileChips = document.getElementById('mobileChips');
+    const skillPicker = document.getElementById('skillPicker');
+    const skillCurrent = document.getElementById('skillCurrent');
+    const skillMenu = document.getElementById('skillMenu');
     const history = [];
 
     function initChips() {
@@ -544,6 +634,37 @@
         desktopChips.appendChild(btn1);
         mobileChips.appendChild(btn2);
       }
+    }
+
+    function initSkillPicker() {
+      for (const option of skillOptions) {
+        const btn = document.createElement('button');
+        btn.className = 'skill-option';
+        btn.type = 'button';
+        btn.dataset.skill = option.value;
+        btn.textContent = option.label;
+        btn.onclick = () => {
+          selectedSkill = option.value;
+          updateSkillPicker();
+          skillPicker.classList.remove('open');
+          inputEl.focus();
+        };
+        skillMenu.appendChild(btn);
+      }
+      updateSkillPicker();
+    }
+
+    function updateSkillPicker() {
+      const current = skillOptions.find(option => option.value === selectedSkill) || skillOptions[0];
+      skillCurrent.textContent = current.label;
+      skillCurrent.classList.toggle('active', selectedSkill !== 'auto');
+      for (const btn of skillMenu.querySelectorAll('.skill-option')) {
+        btn.classList.toggle('selected', btn.dataset.skill === selectedSkill);
+      }
+    }
+
+    function getSkillLabel(value) {
+      return (skillOptions.find(option => option.value === value) || skillOptions[0]).label;
     }
 
     function makeChip(text) {
@@ -563,18 +684,62 @@
       }[ch]));
     }
 
+    function isMarkdownTableSeparator(line) {
+      return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+    }
+
+    function splitMarkdownTableRow(line) {
+      return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+    }
+
+    function renderMarkdownTable(lines, start) {
+      const headers = splitMarkdownTableRow(lines[start]);
+      let end = start + 2;
+      const rows = [];
+      while (end < lines.length && /^\s*\|.*\|\s*$/.test(lines[end]) && !isMarkdownTableSeparator(lines[end])) {
+        rows.push(splitMarkdownTableRow(lines[end]));
+        end += 1;
+      }
+      let html = '<div class="table-wrap markdown-table"><table><thead><tr>';
+      html += headers.map(cell => `<th>${escapeHtml(cell)}</th>`).join('');
+      html += '</tr></thead><tbody>';
+      html += rows.map(row => `<tr>${headers.map((_, idx) => `<td>${escapeHtml(row[idx] ?? '')}</td>`).join('')}</tr>`).join('');
+      html += '</tbody></table></div>';
+      return { html, end };
+    }
+
     function markdownLite(text) {
-      let html = escapeHtml(text);
-      html = html.replace(/^### (.*)$/gm, '<h3>$1</h3>');
-      html = html.replace(/^## (.*)$/gm, '<h2>$1</h2>');
-      html = html.replace(/^# (.*)$/gm, '<h1>$1</h1>');
-      html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-      html = html.replace(/^- (.*)$/gm, '<li>$1</li>');
-      html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
-      html = html.replace(/\n{2,}/g, '</p><p>');
-      html = html.replace(/\n/g, '<br>');
-      return `<p>${html}</p>`.replace(/<p><\/p>/g, '');
+      const lines = String(text ?? '').split('\n');
+      const parts = [];
+      let buffer = [];
+      const flush = () => {
+        if (!buffer.length) return;
+        let html = escapeHtml(buffer.join('\n'));
+        html = html.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+        html = html.replace(/^# (.*)$/gm, '<h1>$1</h1>');
+        html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+        html = html.replace(/^- (.*)$/gm, '<li>$1</li>');
+        html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+        html = html.replace(/\n{2,}/g, '</p><p>');
+        html = html.replace(/\n/g, '<br>');
+        parts.push(`<p>${html}</p>`.replace(/<p><\/p>/g, ''));
+        buffer = [];
+      };
+
+      for (let i = 0; i < lines.length; i++) {
+        if (/^\s*\|.*\|\s*$/.test(lines[i]) && i + 1 < lines.length && isMarkdownTableSeparator(lines[i + 1])) {
+          flush();
+          const table = renderMarkdownTable(lines, i);
+          parts.push(table.html);
+          i = table.end - 1;
+        } else {
+          buffer.push(lines[i]);
+        }
+      }
+      flush();
+      return parts.join('');
     }
 
     function appendMessage(role, content, meta) {
@@ -799,12 +964,16 @@
       inputEl.value = '';
       autoResize();
       sendBtn.disabled = true;
-      const loading = appendMessage('assistant', '<span class="typing">正在理解问题并选择合适的销售分析技能...</span>');
+      skillPicker.classList.remove('open');
+      const loadingText = selectedSkill === 'auto'
+        ? '正在理解问题并选择合适的销售分析技能...'
+        : `正在使用「${getSkillLabel(selectedSkill)}」技能处理...`;
+      const loading = appendMessage('assistant', `<span class="typing">${escapeHtml(loadingText)}</span>`);
       try {
         const resp = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, history })
+          body: JSON.stringify({ message: text, history, skill: selectedSkill })
         });
         const data = await resp.json();
         loading.remove();
@@ -842,6 +1011,12 @@
     }
 
     sendBtn.onclick = sendMessage;
+    skillCurrent.onclick = () => skillPicker.classList.toggle('open');
+    document.addEventListener('click', event => {
+      if (!skillPicker.contains(event.target)) {
+        skillPicker.classList.remove('open');
+      }
+    });
     clearBtn.onclick = () => {
       [...messagesEl.querySelectorAll('.msg')].forEach(el => el.remove());
       history.length = 0;
@@ -860,6 +1035,7 @@
     }
 
     initChips();
+    initSkillPicker();
     loadHealth();
     appendWelcome();
   </script>

@@ -1,0 +1,9 @@
+{
+  "message": "帮我生成上周销售周报",
+  "history": [],
+  "skill": "sales_weekly_report",
+  "params": {
+    "scope_type": "all",
+    "week_mode": "last_week"
+  }
+}

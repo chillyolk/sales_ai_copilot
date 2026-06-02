@@ -1,0 +1,11 @@
+{
+  "cost_amount": { "label": "消耗", "type": "sum", "field": "cost_amount", "format": "currency" },
+  "confirmed_revenue_amount": { "label": "确认收入", "type": "sum", "field": "confirmed_revenue_amount", "format": "currency" },
+  "received_amount": { "label": "回款", "type": "sum", "field": "received_amount", "format": "currency" },
+  "contract_amount": { "label": "合同金额", "type": "sum", "field": "contract_amount", "format": "currency" },
+  "valid_lead_cnt": { "label": "有效线索", "type": "sum", "field": "valid_lead_cnt", "format": "number" },
+  "order_cnt": { "label": "订单", "type": "sum", "field": "order_cnt", "format": "number" },
+  "gmv_amount": { "label": "GMV", "type": "sum", "field": "gmv_amount", "format": "currency" },
+  "cpl": { "label": "CPL", "type": "ratio", "numerator": "cost_amount", "denominator": "valid_lead_cnt", "format": "currency" },
+  "roi": { "label": "ROI", "type": "ratio", "numerator": "gmv_amount", "denominator": "cost_amount", "format": "decimal" }
+}

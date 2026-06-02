@@ -1192,3 +1192,100 @@ MiniMax 分类输出：
 - 客户详情弹窗
 - 报告导出
 - 一键复制话术/建议动作
+
+---
+
+## 11. sales_weekly_report 标准 Skill
+
+当前新增标准 Skill 文件包：
+
+```text
+skills/sales_weekly_report/
+```
+
+后端技能名：
+
+```text
+sales_weekly_report
+```
+
+前端展示名：
+
+```text
+销售周报
+```
+
+### 11.1 触发方式
+
+#### 手动触发
+
+在输入框左侧技能选择器中选择：
+
+```text
+销售周报
+```
+
+然后输入：
+
+```text
+帮我生成上周销售周报
+```
+
+#### 自动路由
+
+自动路由会识别以下关键词：
+
+- 周报
+- 周总结
+- 本周复盘
+- 上周复盘
+- 经营周报
+- 销售周报
+- 生成看板
+
+命中后路由到：
+
+```json
+{
+  "intent": "sales_weekly_report",
+  "skill": "sales_weekly_report",
+  "requires_data": true
+}
+```
+
+### 11.2 能力范围
+
+当前 MVP 支持：
+
+- 默认上周周报
+- 周一到周日口径
+- 全量销售周报
+- 根据问题中的销售姓名或销售部门做范围过滤
+- 固定 SQL 模板查询
+- Python 计算指标
+- MiniMax 生成摘要和行动建议
+- BI blocks 展示
+- PNG 图片下载
+
+### 11.3 输出结构
+
+该 Skill 会返回：
+
+```json
+{
+  "intent": "sales_weekly_report",
+  "skill": "sales_weekly_report",
+  "report": {
+    "type": "weekly_report",
+    "downloadable": true,
+    "filename": "销售周报_2026-05-19_2026-05-25.png"
+  },
+  "blocks": []
+}
+```
+
+前端检测到 `report.downloadable = true` 后，会显示“下载图片”按钮。
+
+### 11.4 说明
+
+周报 Skill 不依赖模型生成 SQL，而是使用 `skills/sales_weekly_report/queries/` 中的固定 SQL 模板。模型只负责基于数据证据生成摘要和下周行动建议。

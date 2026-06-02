@@ -98,11 +98,13 @@
     .status {
       border: 1px solid var(--border);
       background: var(--panel-2);
-      border-radius: 16px;
-      padding: 14px;
-      font-size: 13px;
+      border-radius: 14px;
+      padding: 9px 10px;
+      font-size: 12px;
       color: var(--muted);
-      margin-bottom: 18px;
+      margin-bottom: 10px;
+      display: grid;
+      gap: 4px;
     }
 
     .status strong { color: var(--text); }
@@ -176,30 +178,37 @@
       font-size: 11px;
     }
 
-    .metric-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: auto;
-    }
-
-    .metric {
-      background: var(--panel-2);
+    .data-source-card {
+      width: 100%;
       border: 1px solid var(--border);
+      background: var(--panel-2);
       border-radius: 14px;
-      padding: 12px;
+      padding: 9px 10px;
+      text-align: left;
+      cursor: pointer;
+      color: var(--text);
     }
 
-    .metric b {
-      display: block;
-      font-size: 16px;
+    .data-source-card:hover {
+      border-color: var(--primary);
+      background: var(--primary-soft);
     }
 
-    .metric span {
+    .data-source-card span,
+    .data-source-card em {
       display: block;
-      margin-top: 4px;
       color: var(--muted);
+      font-size: 11px;
+      font-style: normal;
+    }
+
+    .data-source-card b {
+      display: block;
+      margin: 2px 0;
       font-size: 12px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
     }
 
     .main {
@@ -530,6 +539,30 @@
     .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), var(--green)); }
     .bar-value { color: var(--muted); font-variant-numeric: tabular-nums; }
 
+    .report-shell {
+      background: #fff;
+      border-radius: 18px;
+      padding: 14px;
+      border: 1px solid #dbeafe;
+    }
+
+    .report-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 10px;
+    }
+
+    .download-report-btn {
+      border: 1px solid var(--primary);
+      background: var(--primary-soft);
+      color: var(--primary-2);
+      border-radius: 999px;
+      padding: 7px 11px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
     .followups { display: flex; flex-wrap: wrap; gap: 6px; }
     .followup-btn { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 8px; cursor: pointer; color: #344054; font-size: 12px; }
     .followup-btn:hover { background: var(--primary-soft); border-color: var(--primary); }
@@ -643,13 +676,12 @@
         <div class="session-list" id="sessionList"></div>
       </div>
 
-      <div class="section-title">数据范围</div>
-      <div class="metric-grid">
-        <div class="metric"><b>3万</b><span>日级宽表记录</span></div>
-        <div class="metric"><b>81</b><span>分析字段</span></div>
-        <div class="metric"><b>5个月</b><span>2026-01 至 05</span></div>
-        <div class="metric"><b>34</b><span>汽车品牌</span></div>
-      </div>
+      <div class="section-title">数据源</div>
+      <button class="data-source-card" id="dataSourceCard" type="button" aria-label="切换数据源">
+        <span>数据源</span>
+        <b id="dataSourceName">ads_auto_commercial_daily_wide</b>
+        <em>点击切换</em>
+      </button>
     </aside>
 
     <main class="main">
@@ -685,6 +717,7 @@
     const suggestions = [
       '我想拜访一个客户，告诉我几个有用的话术',
       '我的客户中本月环比上月消耗下降20%的客户出现哪些问题，给我做归因分析',
+      '帮我生成上周销售周报',
       '本月客户消耗 Top10 是谁？',
       '哪些客户余额快没了？',
       '哪些客户消耗高但没有订单？',
@@ -697,7 +730,8 @@
       { value: 'auto', label: '自动' },
       { value: 'general_chat', label: '普通对话' },
       { value: 'sql_query', label: '数据查询' },
-      { value: 'attribution_analysis', label: '归因分析' }
+      { value: 'attribution_analysis', label: '归因分析' },
+      { value: 'sales_weekly_report', label: '销售周报' }
     ];
     let selectedSkill = 'auto';
     const STORAGE_KEY = 'xiaoshutong_sessions_v1';
@@ -715,6 +749,8 @@
     const desktopChips = document.getElementById('desktopChips');
     const mobileChips = document.getElementById('mobileChips');
     const sessionListEl = document.getElementById('sessionList');
+    const dataSourceCard = document.getElementById('dataSourceCard');
+    const dataSourceName = document.getElementById('dataSourceName');
     const skillPicker = document.getElementById('skillPicker');
     const skillCurrent = document.getElementById('skillCurrent');
     const skillMenu = document.getElementById('skillMenu');
@@ -841,7 +877,7 @@
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
       if (role === 'assistant' && meta && Array.isArray(meta.blocks) && meta.blocks.length) {
-        bubble.appendChild(renderBlocks(meta.blocks));
+        bubble.appendChild(renderAssistantBlocks(meta));
       } else {
         bubble.innerHTML = role === 'assistant' ? markdownLite(content) : escapeHtml(content);
       }
@@ -858,7 +894,28 @@
     }
 
     function getWelcomeMessage() {
-      return { role: 'assistant', content: `## 你好，我是销数通 AI Copilot\n你可以直接问我销售经营、客户投放、线索转化、ROI、余额、逾期应收等问题。\n\n例如：\n- 本月客户消耗 Top10 是谁？\n- 哪些客户消耗高但没有订单？\n- 线索通和信息流广告哪个效果更好？\n- 哪些客户适合追加预算？`, meta: null };
+      const content = '## 你好，我是销数通 AI Copilot\n你可以直接问我销售经营、客户投放、线索转化、ROI、余额、逾期应收等问题。';
+      return {
+        role: 'assistant',
+        content,
+        meta: {
+          intent: 'welcome',
+          skill: 'welcome',
+          blocks: [
+            { type: 'summary', title: '欢迎使用销数通', content },
+            {
+              type: 'followups',
+              title: '你可以试试这些问题',
+              items: [
+                '本月客户消耗 Top10 是谁？',
+                '哪些客户消耗高但没有订单？',
+                '线索通和信息流广告哪个效果更好？',
+                '哪些客户适合追加预算？'
+              ]
+            }
+          ]
+        }
+      };
     }
 
     function createSession(title = '新会话') {
@@ -961,6 +1018,64 @@
       session.updatedAt = Date.now();
       saveSessions();
       renderCurrentSession();
+    }
+
+    function renderAssistantBlocks(meta) {
+      if (!meta.report || !meta.report.downloadable) {
+        return renderBlocks(meta.blocks);
+      }
+      const shell = document.createElement('div');
+      shell.className = 'report-shell';
+      const toolbar = document.createElement('div');
+      toolbar.className = 'report-toolbar';
+      const btn = document.createElement('button');
+      btn.className = 'download-report-btn';
+      btn.type = 'button';
+      btn.textContent = '下载图片';
+      btn.onclick = () => downloadReportImage(shell, meta.report.filename || '销售周报.png');
+      toolbar.appendChild(btn);
+      const exportRoot = document.createElement('div');
+      exportRoot.className = 'report-export-root';
+      exportRoot.appendChild(renderBlocks(meta.blocks));
+      shell.appendChild(toolbar);
+      shell.appendChild(exportRoot);
+      return shell;
+    }
+
+    async function downloadReportImage(shell, filename) {
+      const target = shell.querySelector('.report-export-root') || shell;
+      if (window.html2canvas) {
+        const canvas = await window.html2canvas(target, { backgroundColor: '#ffffff', scale: 2 });
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const width = Math.ceil(rect.width || 1200);
+      const height = Math.ceil(target.scrollHeight || rect.height || 800);
+      const styles = Array.from(document.querySelectorAll('style')).map(style => style.textContent).join('\n');
+      const html = `<div xmlns="http://www.w3.org/1999/xhtml"><style>${styles}</style>${target.outerHTML}</div>`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%">${html}</foreignObject></svg>`;
+      const img = new Image();
+      const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width * 2;
+        canvas.height = height * 2;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(2, 2);
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        const link = document.createElement('a');
+        link.download = filename;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      };
+      img.src = url;
     }
 
     function createCard(title) {
@@ -1219,11 +1334,10 @@
       try {
         const resp = await fetch('/api/health');
         const data = await resp.json();
+        dataSourceName.textContent = data.table || 'ads_auto_commercial_daily_wide';
         statusEl.innerHTML = `
-          <div><strong>数据表：</strong>${escapeHtml(data.table)}</div>
-          <div><strong>字段数：</strong>${data.columns}</div>
-          <div><strong>MiniMax：</strong><span class="${data.minimaxConfigured ? 'ok' : 'warn'}">${data.minimaxConfigured ? '已配置' : '未配置，本地兜底'}</span></div>
-          <div><strong>模型：</strong>${escapeHtml(data.model)}</div>
+          <div><strong>当前模型：</strong>${escapeHtml(data.model)}</div>
+          <div><strong>模型状态：</strong><span class="${data.minimaxConfigured ? 'ok' : 'warn'}">${data.minimaxConfigured ? '已配置' : '未配置'}</span></div>
         `;
       } catch {
         statusEl.innerHTML = '<span class="warn">服务未连接</span>';
@@ -1239,6 +1353,9 @@
     });
     newSessionBtn.onclick = newSession;
     clearBtn.onclick = clearCurrentSession;
+    dataSourceCard.onclick = () => {
+      appendMessage('assistant', '## 数据源切换\n当前版本仅接入 `ads_auto_commercial_daily_wide`。后续可以在这里扩展更多数据源，用于不同方向的销售分析。');
+    };
     sidebarToggleBtn.onclick = openSidebarDrawer;
     sidebarOverlay.onclick = closeSidebarDrawer;
     inputEl.addEventListener('input', autoResize);

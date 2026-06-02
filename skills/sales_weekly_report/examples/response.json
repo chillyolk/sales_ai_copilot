@@ -1,0 +1,11 @@
+{
+  "intent": "sales_weekly_report",
+  "skill": "sales_weekly_report",
+  "answer": "本周经营整体表现...",
+  "report": {
+    "type": "weekly_report",
+    "downloadable": true,
+    "filename": "销售周报_2026-05-18_2026-05-24.png"
+  },
+  "blocks": []
+}

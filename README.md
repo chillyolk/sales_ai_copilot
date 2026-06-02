@@ -25,13 +25,14 @@
 - 自然语言问数
 - 普通销售对话与拜访话术建议
 - 意图识别与技能路由
-- 输入框左侧手动技能选择：自动 / 普通对话 / 数据查询 / 归因分析
+- 输入框左侧手动技能选择：自动 / 普通对话 / 数据查询 / 归因分析 / 销售周报
 - 本地多会话列表，支持新建、切换、清空当前会话
 - 会话记录保存在浏览器 localStorage
 - 移动端左侧抽屉，集中展示推荐问题和会话列表
 - 销售经营数据分析
 - 客户投放效果诊断
 - 月环比消耗下降客户归因分析
+- 标准销售周报 Skill 文件包，支持 BI 看板和 PNG 下载
 - 追加预算机会识别
 - 余额、逾期、低效投放等风险发现
 - 类 BI 的 KPI 卡片、标签、图表、表格和行动建议展示
@@ -98,6 +99,7 @@ ads_auto_commercial_daily_wide
 ├── start_app.sh                                # 启动脚本
 ├── stop_app.sh                                 # 停止脚本
 ├── save_minimax_key.sh                         # 保存 MiniMax Key 到 macOS Keychain
+├── skills/sales_weekly_report/                 # 销售周报标准 Skill 文件包
 ├── .env.local.example                          # 环境变量示例，不包含真实 Key
 ├── .gitignore                                  # 忽略本地密钥和运行日志
 ├── PRD.md                                      # 产品需求文档
@@ -263,13 +265,14 @@ The application first detects the user's intent. General sales communication que
 - Natural language data analysis
 - General sales conversation and customer visit talking points
 - Intent detection and skill routing
-- Manual skill selector in the input box: Auto / General Chat / Data Query / Attribution Analysis
+- Manual skill selector in the input box: Auto / General Chat / Data Query / Attribution Analysis / Sales Weekly Report
 - Local multi-session list with create, switch, and clear-current-session support
 - Session records persisted in browser localStorage
 - Mobile sidebar drawer for recommended questions and session history
 - Sales performance analysis
 - Customer advertising performance diagnosis
 - Month-over-month spend decline attribution analysis
+- Standard sales weekly report skill package with BI dashboard and PNG download
 - Budget expansion opportunity detection
 - Balance, overdue receivable, and inefficient spending risk discovery
 - BI-like KPI cards, tags, charts, tables, and action recommendations
@@ -336,6 +339,7 @@ Dataset profile:
 ├── start_app.sh                                # Start script
 ├── stop_app.sh                                 # Stop script
 ├── save_minimax_key.sh                         # Save MiniMax key to macOS Keychain
+├── skills/sales_weekly_report/                 # Standard sales weekly report skill package
 ├── .env.local.example                          # Environment variable example, no real key
 ├── .gitignore                                  # Ignore local secrets and runtime logs
 ├── PRD.md                                      # Product requirements document

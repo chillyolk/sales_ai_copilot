@@ -1,0 +1,19 @@
+{
+  "layout": "weekly_report",
+  "blocks": [
+    "summary",
+    "kpi_cards",
+    "tags",
+    "trend_chart",
+    "top_customers_chart",
+    "top_customers_table",
+    "top_products_table",
+    "insights",
+    "actions",
+    "followups"
+  ],
+  "download": {
+    "enabled": true,
+    "filenameTemplate": "销售周报_{start_date}_{end_date}.png"
+  }
+}

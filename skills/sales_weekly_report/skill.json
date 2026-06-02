@@ -1,0 +1,19 @@
+{
+  "name": "sales_weekly_report",
+  "displayName": "销售周报",
+  "description": "自动生成销售经营周报 BI 看板，并支持下载图片。",
+  "version": "0.1.0",
+  "type": "report",
+  "enabled": true,
+  "requiresData": true,
+  "supportedScopes": ["all", "sales", "department"],
+  "defaultScope": "all",
+  "defaultWeekMode": "last_week",
+  "defaultCompareMode": "previous_week",
+  "keywords": ["周报", "周总结", "本周复盘", "上周复盘", "经营周报", "销售周报", "生成看板"],
+  "output": {
+    "format": "blocks",
+    "downloadable": true,
+    "downloadType": "png"
+  }
+}

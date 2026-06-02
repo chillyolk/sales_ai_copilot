@@ -15,6 +15,7 @@ XiaoShuTong AI Copilot / 销数通 AI Copilot
 - 投放效果诊断
 - 归因分析
 - 销售话术建议
+- 销售周报 BI 看板生成和 PNG 下载
 - 类 BI 看板式结果查看
 
 当前项目目录：
@@ -53,8 +54,9 @@ Python 本地后端
      -> general_chat 普通销售对话
      -> sql_query 数据查询
      -> attribution_analysis 归因分析
+     -> sales_weekly_report 销售周报
   -> SQLite 查询 CSV 数据（按需）
-  -> MiniMax 生成话术/总结/诊断报告
+  -> MiniMax 生成话术/总结/诊断报告/周报摘要
   -> 结构化 blocks 返回前端 BI 化展示
 ```
 
@@ -70,6 +72,7 @@ Python 本地后端
 | `start_app.sh` | 启动脚本 |
 | `stop_app.sh` | 停止脚本 |
 | `save_minimax_key.sh` | 将 MiniMax API Key 保存到 macOS Keychain 的脚本 |
+| `skills/sales_weekly_report/` | 销售周报标准 Skill 文件包，包含配置、SQL、指标、Prompt 和示例 |
 | `.env.local.example` | 环境变量示例，不包含真实 Key |
 | `.gitignore` | 忽略 `.env.local`、日志、pid、pyc 等本地文件 |
 
@@ -150,7 +153,32 @@ attribution_analysis
 - `actions`：行动建议
 - `followups`：推荐追问
 
-### 4.5 多会话与移动端体验
+### 4.5 销售周报
+
+用户可以问：
+
+```text
+帮我生成上周销售周报
+```
+
+系统会走：
+
+```text
+sales_weekly_report
+```
+
+当前支持：
+
+- 标准 Skill 文件包：`skills/sales_weekly_report/`
+- 默认生成上周周报
+- 支持全量、销售姓名、销售部门范围解析
+- 固定 SQL 模板查询，不让模型自由生成周报 SQL
+- Python 负责指标计算和环比计算
+- MiniMax 负责摘要和行动建议
+- 输出 BI blocks：摘要、KPI、趋势图、客户贡献、产品表现、风险客户、机会客户、行动建议
+- 周报消息支持下载 PNG 图片
+
+### 4.6 多会话与移动端体验
 
 当前前端支持：
 
@@ -163,7 +191,7 @@ attribution_analysis
 - 移动端默认收起左侧栏，可通过标题栏左侧 icon 从屏幕左侧滑出
 - 移动端抽屉中集中展示推荐问题和会话列表
 
-### 4.6 安全能力
+### 4.7 安全能力
 
 当前安全设计：
 

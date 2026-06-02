@@ -7,6 +7,7 @@ import sqlite3
 import threading
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
@@ -285,17 +286,20 @@ def block_response(
     }
 
 
-SUPPORTED_SKILLS = {"general_chat", "sql_query", "attribution_analysis"}
+SUPPORTED_SKILLS = {"general_chat", "sql_query", "attribution_analysis", "sales_weekly_report"}
 
 
 def detect_intent(question: str) -> dict[str, Any]:
     q = question.lower()
     diagnosis_keywords = ["归因", "诊断", "原因", "为什么", "环比", "同比", "下降", "下滑", "波动", "拆解"]
+    report_keywords = ["周报", "周总结", "本周复盘", "上周复盘", "经营周报", "销售周报", "生成看板"]
     chat_keywords = ["话术", "怎么说", "怎么聊", "拜访", "沟通", "客户异议", "开场白", "邀约", "谈判", "说服"]
     query_keywords = ["哪些", "top", "排名", "多少", "查询", "筛选", "余额", "逾期", "回款", "消耗", "roi", "cpl", "线索", "订单"]
 
     if any(k in question for k in diagnosis_keywords) and any(k in question for k in ["客户", "消耗", "线索", "订单", "roi", "cpl"]):
         return {"intent": "attribution_analysis", "skill": "attribution_analysis", "requires_data": True, "confidence": 0.9}
+    if any(k in question for k in report_keywords):
+        return {"intent": "sales_weekly_report", "skill": "sales_weekly_report", "requires_data": True, "confidence": 0.88}
     if any(k in question for k in chat_keywords):
         return {"intent": "general_chat", "skill": "general_chat", "requires_data": False, "confidence": 0.85}
     if any(k in q for k in query_keywords):
@@ -390,6 +394,213 @@ def sql_query_skill(question: str, history: list[dict[str, str]]) -> dict[str, A
         )
         CHAT_CACHE[key] = clone_response(result)
         return result
+
+
+def load_skill_file(skill_name: str, relative_path: str) -> str:
+    return (BASE_DIR / "skills" / skill_name / relative_path).read_text(encoding="utf-8")
+
+
+def load_skill_json(skill_name: str, relative_path: str) -> dict[str, Any]:
+    return json.loads(load_skill_file(skill_name, relative_path))
+
+
+def resolve_week_range(question: str) -> dict[str, str]:
+    with DB_LOCK:
+        row = DB.execute(f'SELECT MAX(stat_date) AS max_date FROM "{TABLE_NAME}"').fetchone()
+    latest = datetime.strptime(row["max_date"], "%Y-%m-%d")
+    this_week_start = latest - timedelta(days=latest.weekday())
+    if "本周" in question:
+        start = this_week_start
+        end = latest
+    else:
+        start = this_week_start - timedelta(days=7)
+        end = this_week_start - timedelta(days=1)
+    prev_start = start - timedelta(days=7)
+    prev_end = start - timedelta(days=1)
+    trend_start = start - timedelta(days=28)
+    return {
+        "start_date": start.strftime("%Y-%m-%d"),
+        "end_date": end.strftime("%Y-%m-%d"),
+        "prev_start_date": prev_start.strftime("%Y-%m-%d"),
+        "prev_end_date": prev_end.strftime("%Y-%m-%d"),
+        "trend_start_date": trend_start.strftime("%Y-%m-%d"),
+    }
+
+
+def parse_report_scope(question: str) -> dict[str, Optional[str]]:
+    with DB_LOCK:
+        sales_names = [row[0] for row in DB.execute(f'SELECT DISTINCT sales_name FROM "{TABLE_NAME}" WHERE sales_name != ""').fetchall()]
+        departments = [row[0] for row in DB.execute(f'SELECT DISTINCT sales_department_name FROM "{TABLE_NAME}" WHERE sales_department_name != ""').fetchall()]
+    for name in sales_names:
+        if name and name in question:
+            return {"scope_type": "sales", "scope_name": name, "sales_name": name, "department_name": None}
+    for department in departments:
+        if department and department in question:
+            return {"scope_type": "department", "scope_name": department, "sales_name": None, "department_name": department}
+    return {"scope_type": "all", "scope_name": "全量销售", "sales_name": None, "department_name": None}
+
+
+def safe_divide(numerator: float, denominator: float) -> Optional[float]:
+    return None if not denominator else numerator / denominator
+
+
+def format_amount(value: float) -> str:
+    value = float(value or 0)
+    if abs(value) >= 100000000:
+        return f"{value / 100000000:.2f}亿"
+    if abs(value) >= 10000:
+        return f"{value / 10000:.2f}万"
+    return f"{value:.0f}"
+
+
+def format_number(value: float) -> str:
+    return f"{int(value or 0):,}"
+
+
+def add_ratio_fields(row: dict[str, Any]) -> dict[str, Any]:
+    cost = float(row.get("cost_amount") or 0)
+    valid_leads = float(row.get("valid_lead_cnt") or 0)
+    gmv = float(row.get("gmv_amount") or 0)
+    impressions = float(row.get("impression_cnt") or 0)
+    clicks = float(row.get("click_cnt") or 0)
+    row["cpl"] = safe_divide(cost, valid_leads)
+    row["roi"] = safe_divide(gmv, cost)
+    row["ctr"] = safe_divide(clicks, impressions)
+    return row
+
+
+def run_skill_query(query_name: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+    sql = load_skill_file("sales_weekly_report", f"queries/{query_name}.sql")
+    with DB_LOCK:
+        return [dict(row) for row in DB.execute(sql, params).fetchall()]
+
+
+def sales_weekly_report_skill(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
+    manifest = load_skill_json("sales_weekly_report", "skill.json")
+    period = resolve_week_range(question)
+    scope = parse_report_scope(question)
+    top_n = 10
+    params = {
+        **period,
+        "sales_name": scope["sales_name"],
+        "department_name": scope["department_name"],
+        "top_n": top_n,
+    }
+
+    overview = add_ratio_fields((run_skill_query("weekly_overview", params) or [{}])[0])
+    compare = add_ratio_fields((run_skill_query("weekly_compare", params) or [{}])[0])
+    trend_rows = [add_ratio_fields(row) for row in run_skill_query("weekly_trend", params)]
+    top_customers = [add_ratio_fields(row) for row in run_skill_query("top_customers", params)]
+    top_products = [add_ratio_fields(row) for row in run_skill_query("top_products", params)]
+    risks = [add_ratio_fields(row) for row in run_skill_query("risk_customers", {**params, "top_n": 5})]
+    opportunities = [add_ratio_fields(row) for row in run_skill_query("opportunity_customers", {**params, "top_n": 5})]
+
+    def metric_change(metric: str) -> Optional[float]:
+        return pct_change(float(overview.get(metric) or 0), float(compare.get(metric) or 0))
+
+    kpis = [
+        {"label": "消耗", "value": f"{format_amount(overview.get('cost_amount', 0))} | {format_pct(metric_change('cost_amount'))}"},
+        {"label": "确认收入", "value": f"{format_amount(overview.get('confirmed_revenue_amount', 0))} | {format_pct(metric_change('confirmed_revenue_amount'))}"},
+        {"label": "回款", "value": f"{format_amount(overview.get('received_amount', 0))} | {format_pct(metric_change('received_amount'))}"},
+        {"label": "合同金额", "value": f"{format_amount(overview.get('contract_amount', 0))} | {format_pct(metric_change('contract_amount'))}"},
+        {"label": "有效线索", "value": f"{format_number(overview.get('valid_lead_cnt', 0))} | {format_pct(metric_change('valid_lead_cnt'))}"},
+        {"label": "订单", "value": f"{format_number(overview.get('order_cnt', 0))} | {format_pct(metric_change('order_cnt'))}"},
+        {"label": "GMV", "value": f"{format_amount(overview.get('gmv_amount', 0))} | {format_pct(metric_change('gmv_amount'))}"},
+        {"label": "ROI", "value": f"{(overview.get('roi') or 0):.2f} | {format_pct(pct_change(overview.get('roi') or 0, compare.get('roi') or 0))}"},
+    ]
+
+    customer_table = [{
+        "客户": row.get("customer_account_name"),
+        "销售": row.get("sales_name"),
+        "客户等级": row.get("customer_level"),
+        "消耗": format_amount(row.get("cost_amount", 0)),
+        "有效线索": format_number(row.get("valid_lead_cnt", 0)),
+        "订单": format_number(row.get("order_cnt", 0)),
+        "GMV": format_amount(row.get("gmv_amount", 0)),
+        "ROI": f"{(row.get('roi') or 0):.2f}",
+    } for row in top_customers]
+
+    product_table = [{
+        "产品类型": row.get("ad_product_type"),
+        "广告产品": row.get("ad_product_name"),
+        "消耗": format_amount(row.get("cost_amount", 0)),
+        "有效线索": format_number(row.get("valid_lead_cnt", 0)),
+        "订单": format_number(row.get("order_cnt", 0)),
+        "ROI": f"{(row.get('roi') or 0):.2f}",
+        "CPL": format_amount(row.get("cpl") or 0),
+    } for row in top_products]
+
+    risk_table = [{
+        "客户": row.get("customer_account_name"),
+        "销售": row.get("sales_name"),
+        "风险": "逾期/余额/转化风险",
+        "证据": f"逾期{format_amount(row.get('overdue_receivable_amount', 0))}，余额{format_amount(row.get('available_balance_amount', 0))}，订单{format_number(row.get('order_cnt', 0))}",
+        "建议动作": "优先确认预算、余额和回款状态",
+    } for row in risks]
+
+    opportunity_table = [{
+        "客户": row.get("customer_account_name"),
+        "销售": row.get("sales_name"),
+        "机会": "高 ROI 可扩量",
+        "ROI": f"{(row.get('roi') or 0):.2f}",
+        "CPL": format_amount(row.get("cpl") or 0),
+        "建议动作": "沟通追加预算或扩大高效产品投放",
+    } for row in opportunities]
+
+    evidence = {
+        "scope": scope,
+        "period": period,
+        "overview": overview,
+        "top_customers": customer_table[:5],
+        "top_products": product_table[:5],
+        "risks": risk_table,
+        "opportunities": opportunity_table,
+    }
+    if MINIMAX_API_KEY and MINIMAX_API_URL:
+        summary_prompt = load_skill_file("sales_weekly_report", "prompts/summary.md")
+        actions_prompt = load_skill_file("sales_weekly_report", "prompts/actions.md")
+        answer = clean_model_text(minimax_chat([
+            {"role": "system", "content": summary_prompt},
+            {"role": "user", "content": json.dumps(evidence, ensure_ascii=False)},
+        ], temperature=0.25))
+        actions_text = clean_model_text(minimax_chat([
+            {"role": "system", "content": actions_prompt},
+            {"role": "user", "content": json.dumps(evidence, ensure_ascii=False)},
+        ], temperature=0.25))
+    else:
+        answer = f"{scope['scope_name']}在 {period['start_date']} 至 {period['end_date']} 的周报已生成。"
+        actions_text = "- 优先跟进风险客户\n- 推动高 ROI 客户追加预算\n- 复盘低转化产品"
+
+    trend_items = [{"label": row.get("stat_month") or row.get("end_date"), "value": round(float(row.get("cost_amount") or 0), 2)} for row in trend_rows]
+    customer_chart_items = [{"label": (row.get("customer_account_name") or "")[:12], "value": round(float(row.get("cost_amount") or 0), 2)} for row in top_customers[:5]]
+    action_items = [line.strip("- ").strip() for line in actions_text.splitlines() if line.strip()][:5]
+    if not action_items:
+        action_items = ["优先跟进风险客户", "推动高 ROI 客户追加预算", "复盘低转化产品"]
+
+    title = f"{scope['scope_name']}销售周报"
+    filename = f"销售周报_{period['start_date']}_{period['end_date']}.png"
+    blocks = [
+        {"type": "summary", "title": title, "content": f"**周期：**{period['start_date']} 至 {period['end_date']}\n\n{answer}"},
+        {"type": "kpi_cards", "items": kpis},
+        {"type": "tags", "items": ["销售周报", scope["scope_type"], "上周", "可下载图片"]},
+        {"type": "chart", "title": "近 4 周消耗趋势", "chartType": "bar", "data": {"items": trend_items}},
+        {"type": "chart", "title": "客户贡献 Top5", "chartType": "bar", "data": {"items": customer_chart_items}},
+        table_block("客户贡献明细", list(customer_table[0].keys()) if customer_table else [], customer_table),
+        table_block("产品表现明细", list(product_table[0].keys()) if product_table else [], product_table),
+        table_block("风险客户", list(risk_table[0].keys()) if risk_table else [], risk_table),
+        table_block("机会客户", list(opportunity_table[0].keys()) if opportunity_table else [], opportunity_table),
+        {"type": "actions", "title": "下周建议动作", "items": action_items},
+        {"type": "followups", "items": ["继续分析风险客户", "把周报按销售拆分", "生成本周周报"]},
+    ]
+    result = block_response(
+        intent="sales_weekly_report",
+        skill="sales_weekly_report",
+        answer=answer,
+        blocks=blocks,
+        debug={"period": period, "scope": scope, "source": manifest.get("name")},
+    )
+    result["report"] = {"type": "weekly_report", "downloadable": True, "filename": filename, "width": 1200}
+    return result
 
 
 def get_latest_months() -> tuple[str, str]:
@@ -691,6 +902,8 @@ def handle_chat(payload: dict[str, Any]) -> dict[str, Any]:
         result = general_chat_skill(question, history if isinstance(history, list) else [])
     elif skill == "attribution_analysis":
         result = attribution_analysis_skill(question, history if isinstance(history, list) else [])
+    elif skill == "sales_weekly_report":
+        result = sales_weekly_report_skill(question, history if isinstance(history, list) else [])
     else:
         result = sql_query_skill(question, history if isinstance(history, list) else [])
     result["intent"] = route["intent"]

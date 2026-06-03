@@ -268,9 +268,18 @@
     .msg {
       display: flex;
       gap: 12px;
-      margin-bottom: 18px;
+      margin-bottom: 14px;
       align-items: flex-start;
+      width: 100%;
     }
+
+    .msg.assistant {
+      background: #f7f8fa;
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .msg.assistant .avatar { display: none; }
 
     .msg.user { flex-direction: row-reverse; }
 
@@ -290,29 +299,53 @@
     .user .avatar { background: var(--primary); }
 
     .bubble {
-      max-width: min(980px, 92%);
+      width: 100%;
       min-width: 0;
-      border: 1px solid var(--border);
-      background: #fff;
-      border-radius: 16px;
-      padding: 12px 14px;
+      border: 0;
+      background: transparent;
+      border-radius: 0;
+      padding: 0;
       line-height: 1.48;
-      box-shadow: 0 5px 18px rgba(15, 23, 42, .05);
+      box-shadow: none;
       overflow: visible;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
 
     .user .bubble {
+      width: auto;
+      max-width: min(720px, 78%);
       color: #fff;
       background: linear-gradient(135deg, var(--primary), var(--primary-2));
-      border-color: transparent;
+      border-radius: 16px;
+      padding: 12px 14px;
     }
 
     .bubble h1, .bubble h2, .bubble h3 { margin: 6px 0 4px; font-size: 15px; line-height: 1.35; }
     .bubble p { margin: 0 0 6px; }
     .bubble ul, .bubble ol { margin: 4px 0 6px; padding-left: 18px; }
     .bubble code { background: #f1f5f9; border-radius: 6px; padding: 1px 4px; }
+
+    .metric-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .metric-strip-label { font-weight: 800; color: #475467; }
+
+    .metric-token {
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #344054;
+      border: 1px solid #dbe4ff;
+      font-weight: 700;
+    }
 
     .meta-box {
       margin-top: 12px;
@@ -628,7 +661,7 @@
         padding: 14px;
       }
 
-      .bubble {
+      .user .bubble {
         max-width: calc(100vw - 58px);
         padding: 10px 11px;
         border-radius: 14px;
@@ -876,10 +909,13 @@
       avatar.textContent = role === 'user' ? '我' : 'AI';
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
+      if (role === 'assistant' && meta) {
+        bubble.appendChild(renderMetricStrip(meta));
+      }
       if (role === 'assistant' && meta && Array.isArray(meta.blocks) && meta.blocks.length) {
         bubble.appendChild(renderAssistantBlocks(meta));
       } else {
-        bubble.innerHTML = role === 'assistant' ? markdownLite(content) : escapeHtml(content);
+        bubble.insertAdjacentHTML('beforeend', role === 'assistant' ? markdownLite(content) : escapeHtml(content));
       }
 
       if (meta) {
@@ -891,6 +927,76 @@
       messagesEl.appendChild(wrapper);
       messagesEl.scrollTop = messagesEl.scrollHeight;
       return wrapper;
+    }
+
+    function extractUsedMetrics(meta) {
+      const metricNames = new Set();
+      const metricMap = {
+        cost_amount: '消耗', cash_cost_amount: '现金消耗', grant_cost_amount: '赠款消耗',
+        recharge_amount: '充值', net_recharge_amount: '净充值',
+        confirmed_revenue_amount: '确认收入', contract_amount: '合同金额', received_amount: '回款', receivable_amount: '应收', overdue_receivable_amount: '逾期应收',
+        impression_cnt: '曝光', click_cnt: '点击', valid_click_cnt: '有效点击', ctr: 'CTR', cpc: 'CPC', cpm: 'CPM',
+        lead_cnt: '线索', valid_lead_cnt: '有效线索', phone_lead_cnt: '电话线索', form_lead_cnt: '表单线索', im_lead_cnt: 'IM线索', test_drive_lead_cnt: '试驾线索',
+        arrival_cnt: '到店', test_drive_cnt: '试驾', order_cnt: '订单', vehicle_sales_cnt: '成交车辆',
+        gmv_amount: 'GMV', roi: 'ROI', cost_per_lead: 'CPL', cost_per_order: 'CPO',
+        available_balance_amount: '可用余额', active_campaign_cnt: '活跃计划', active_customer_cnt: '活跃客户',
+        customer_count: '签约客户数', avg_customer_value: '客单价', renewal_rate: '续费率'
+      };
+      const knownMetrics = ['消耗', '广告消耗金额', '充值', '充值金额', '确认收入', '收入', '回款', '合同金额', '线索', '有效线索', '订单', 'GMV', 'ROI', 'CPL', 'CTR', '逾期应收', '余额', '客单价', '续费率', '活跃度'];
+      const addMetric = value => {
+        const text = String(value || '');
+        if (!text) return;
+        for (const [field, label] of Object.entries(metricMap)) {
+          if (text === field || text.includes(field)) metricNames.add(label);
+        }
+        for (const metric of knownMetrics) {
+          if (text.includes(metric)) metricNames.add(metric);
+        }
+      };
+      for (const block of meta.blocks || []) {
+        addMetric(block.title);
+        if (block.type === 'kpi_cards') {
+          for (const item of block.items || []) addMetric(item.label);
+        }
+        if (block.type === 'table') {
+          for (const col of block.columns || []) addMetric(col);
+        }
+        if (block.type === 'chart') {
+          addMetric(block.chartType);
+          const items = block.data && block.data.items || [];
+          if (items[0]) Object.keys(items[0]).forEach(addMetric);
+        }
+      }
+      for (const col of meta.columns || []) addMetric(col);
+      for (const row of (meta.rows || []).slice(0, 3)) Object.keys(row || {}).forEach(addMetric);
+      const debugText = `${meta.reason || ''} ${meta.sql || ''} ${JSON.stringify(meta.debug || {})}`;
+      addMetric(debugText);
+      return Array.from(metricNames).slice(0, 6);
+    }
+
+    function renderMetricStrip(meta) {
+      if (meta.skill === 'welcome') return document.createDocumentFragment();
+      const metrics = extractUsedMetrics(meta);
+      const wrap = document.createElement('div');
+      wrap.className = 'metric-strip';
+      const label = document.createElement('span');
+      label.className = 'metric-strip-label';
+      label.textContent = metrics.length ? '使用指标' : '本次回复';
+      wrap.appendChild(label);
+      if (!metrics.length) {
+        const token = document.createElement('span');
+        token.className = 'metric-token';
+        token.textContent = meta.skill || 'AI';
+        wrap.appendChild(token);
+        return wrap;
+      }
+      for (const metric of metrics) {
+        const token = document.createElement('span');
+        token.className = 'metric-token';
+        token.textContent = metric;
+        wrap.appendChild(token);
+      }
+      return wrap;
     }
 
     function getWelcomeMessage() {
@@ -993,6 +1099,24 @@
       saveSessions();
       renderCurrentSession();
       closeSidebarDrawer();
+    }
+
+    function getLastAssistantContext(session) {
+      for (let i = session.messages.length - 1; i >= 0; i--) {
+        const message = session.messages[i];
+        if (message.role === 'assistant' && message.meta) {
+          return {
+            intent: message.meta.intent,
+            skill: message.meta.skill,
+            reason: message.meta.reason,
+            columns: message.meta.columns,
+            rows: (message.meta.rows || []).slice(0, 30),
+            debug: message.meta.debug || {},
+            report: message.meta.report || null
+          };
+        }
+      }
+      return null;
     }
 
     function renameSessionFromFirstQuestion(session, text) {
@@ -1294,7 +1418,7 @@
         const resp = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, history: session.history, skill: selectedSkill })
+          body: JSON.stringify({ message: text, history: session.history, skill: selectedSkill, context: getLastAssistantContext(session) })
         });
         const data = await resp.json();
         if (loading) loading.remove();

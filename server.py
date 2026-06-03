@@ -351,9 +351,109 @@ def clone_response(response: dict[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(response, ensure_ascii=False))
 
 
-def sql_query_skill(question: str, history: list[dict[str, str]]) -> dict[str, Any]:
+def extract_context_customer_and_month(context: Optional[dict[str, Any]]) -> tuple[Optional[str], Optional[str]]:
+    if not context:
+        return None, None
+    rows = context.get("rows") or []
+    customer = None
+    month = None
+    for row in rows:
+        if not customer:
+            customer = row.get("客户名称") or row.get("customer_name") or row.get("customer_account_name")
+        if not month:
+            date_value = row.get("统计日期") or row.get("stat_date")
+            month_value = row.get("统计月份") or row.get("stat_month")
+            if month_value:
+                month = str(month_value)
+            elif date_value:
+                month = str(date_value)[:7]
+        if customer and month:
+            break
+    debug = context.get("debug") or {}
+    reason = context.get("reason") or debug.get("reason") or ""
+    if not customer:
+        match = re.search(r"客户名称[“\"]?([^，。\s“”\"]+)", reason)
+        if match:
+            customer = match.group(1)
+    if not month:
+        match = re.search(r"(20\d{2}-\d{2})", reason)
+        if match:
+            month = match.group(1)
+    return customer, month
+
+
+def latest_year_month_from_data(month: int) -> str:
+    if month < 1 or month > 12:
+        return ""
+    with DB_LOCK:
+        row = DB.execute(f'SELECT MAX(stat_date) AS max_date FROM "{TABLE_NAME}"').fetchone()
+    year = datetime.strptime(row["max_date"], "%Y-%m-%d").year
+    return f"{year}-{month:02d}"
+
+
+def extract_month_from_text(text: str) -> Optional[str]:
+    match = re.search(r"(20\d{2})[-年](\d{1,2})月?", text)
+    if match:
+        month = int(match.group(2))
+        return f"{int(match.group(1)):04d}-{month:02d}" if 1 <= month <= 12 else None
+    match = re.search(r"(\d{1,2})\s*月份?|([一二三四五六七八九十])月", text)
+    if match:
+        if match.group(1):
+            month = int(match.group(1))
+        else:
+            month_map = {"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10}
+            month = month_map.get(match.group(2), 0)
+        return latest_year_month_from_data(month)
+    return None
+
+
+def extract_customer_name_from_text(text: str) -> Optional[str]:
+    patterns = [
+        r"客户名称(?:为|是|=)(.+?)(?:的|，|,|。|$)",
+        r"客户(?:为|是|=)(.+?)(?:的|，|,|。|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            name = match.group(1).strip(" ，,。？?\"'")
+            if name:
+                return name
+    return None
+
+
+def extract_context_from_history(history: list[dict[str, str]]) -> tuple[Optional[str], Optional[str]]:
+    customer = None
+    month = None
+    for message in reversed(history[-8:] if isinstance(history, list) else []):
+        content = message.get("content", "") if isinstance(message, dict) else ""
+        if not customer:
+            customer = extract_customer_name_from_text(content)
+        if not month:
+            month = extract_month_from_text(content)
+        if customer and month:
+            break
+    return customer, month
+
+
+def resolve_followup_question(question: str, context: Optional[dict[str, Any]], history: list[dict[str, str]]) -> str:
+    customer, month = extract_context_customer_and_month(context) if context else (None, None)
+    history_customer, history_month = extract_context_from_history(history)
+    customer = customer or history_customer
+    month = month or history_month
+    resolved = question
+    if customer and any(token in question for token in ["这个客户", "该客户", "这个", "它"]):
+        resolved = resolved.replace("这个客户", f"客户名称为{customer}").replace("该客户", f"客户名称为{customer}")
+    if customer and "客户" not in resolved and any(metric in question for metric in ["充值", "消耗", "线索", "订单", "ROI", "roi"]):
+        resolved = f"客户名称为{customer}，{resolved}"
+    if month and not re.search(r"\d{1,2}\s*月份?|20\d{2}[-年]\d{1,2}", resolved):
+        resolved = f"统计周期为{month}，{resolved}"
+    return resolved
+
+
+def sql_query_skill(question: str, history: list[dict[str, str]], context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     if is_destructive_or_write_request(question):
         raise ValueError("当前应用仅支持只读数据查询和分析，不支持修改、写入或删除数据。")
+    question = resolve_followup_question(question, context, history)
     key = chat_cache_key("sql_query", question, history)
     with CHAT_CACHE_LOCK:
         cached = CHAT_CACHE.get(key)
@@ -881,6 +981,7 @@ def handle_chat(payload: dict[str, Any]) -> dict[str, Any]:
     question = str(payload.get("message", "")).strip()
     history = payload.get("history", [])
     requested_skill = str(payload.get("skill", "auto") or "auto").strip()
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else None
     if not question:
         raise ValueError("请输入问题")
 
@@ -905,7 +1006,7 @@ def handle_chat(payload: dict[str, Any]) -> dict[str, Any]:
     elif skill == "sales_weekly_report":
         result = sales_weekly_report_skill(question, history if isinstance(history, list) else [])
     else:
-        result = sql_query_skill(question, history if isinstance(history, list) else [])
+        result = sql_query_skill(question, history if isinstance(history, list) else [], context)
     result["intent"] = route["intent"]
     result["skill"] = skill
     result["route"] = route

@@ -600,6 +600,31 @@
     .followup-btn { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 8px; cursor: pointer; color: #344054; font-size: 12px; }
     .followup-btn:hover { background: var(--primary-soft); border-color: var(--primary); }
 
+    .message-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+    .message-action-btn { border: 1px solid var(--border); background: #fff; color: #344054; border-radius: 999px; padding: 6px 9px; cursor: pointer; font-size: 12px; }
+    .message-action-btn:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-2); }
+
+    .reply-banner { display: none; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 8px; padding: 8px 10px; border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 12px; color: #1e3a8a; font-size: 12px; }
+    .reply-banner.show { display: flex; }
+    .reply-banner-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reply-banner-close { border: 0; background: transparent; color: #1d4ed8; cursor: pointer; font-weight: 800; }
+
+    .action-modal-overlay { display: none; position: fixed; inset: 0; z-index: 60; background: rgba(15, 23, 42, .36); align-items: center; justify-content: center; padding: 18px; }
+    .action-modal-overlay.show { display: flex; }
+    .action-modal { width: min(520px, 100%); max-height: min(720px, 92vh); overflow: auto; background: #fff; border-radius: 18px; box-shadow: 0 24px 80px rgba(15, 23, 42, .22); border: 1px solid var(--border); }
+    .action-modal-header, .action-modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .action-modal-footer { border-top: 1px solid var(--border); border-bottom: 0; justify-content: flex-end; }
+    .action-modal-title { font-weight: 900; }
+    .action-modal-body { padding: 14px 16px; display: grid; gap: 12px; }
+    .form-row { display: grid; gap: 7px; }
+    .form-row label { color: var(--muted); font-size: 12px; font-weight: 800; }
+    .option-group { display: flex; flex-wrap: wrap; gap: 8px; }
+    .option-chip { border: 1px solid var(--border); background: #fff; color: #344054; border-radius: 999px; padding: 7px 10px; font-size: 12px; cursor: pointer; }
+    .option-chip.selected { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-2); font-weight: 800; }
+    .modal-btn { border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+    .modal-btn.primary { border-color: var(--primary); background: var(--primary); color: #fff; }
+    .mock-success { padding: 10px 12px; border-radius: 12px; background: #ecfdf3; color: #027a48; font-size: 13px; }
+
     .mobile-chips { display: none; }
     .typing { color: var(--muted); }
 
@@ -734,6 +759,7 @@
       </section>
 
       <footer class="composer">
+        <div class="reply-banner" id="replyBanner"></div>
         <div class="composer-inner">
           <div class="skill-picker" id="skillPicker">
             <button class="skill-current" id="skillCurrent" type="button">自动</button>
@@ -745,6 +771,7 @@
       </footer>
     </main>
   </div>
+  <div class="action-modal-overlay" id="actionModalOverlay"></div>
 
   <script>
     const suggestions = [
@@ -768,6 +795,8 @@
     ];
     let selectedSkill = 'auto';
     const STORAGE_KEY = 'xiaoshutong_sessions_v1';
+    const mockLarkUsers = ['张三', '李四', '王五'];
+    const mockLarkGroups = ['销售一组', '华东经营群', '重点客户群'];
     let appState = { currentSessionId: '', sessions: [] };
 
     const messagesEl = document.getElementById('messages');
@@ -787,6 +816,8 @@
     const skillPicker = document.getElementById('skillPicker');
     const skillCurrent = document.getElementById('skillCurrent');
     const skillMenu = document.getElementById('skillMenu');
+    const replyBanner = document.getElementById('replyBanner');
+    const actionModalOverlay = document.getElementById('actionModalOverlay');
 
     function initChips() {
       for (const text of suggestions) {
@@ -901,9 +932,12 @@
       return parts.join('');
     }
 
-    function appendMessage(role, content, meta) {
+    function appendMessage(message) {
+      if (!message.id) message.id = createMessageId();
+      const { role, content, meta } = message;
       const wrapper = document.createElement('div');
       wrapper.className = `msg ${role}`;
+      wrapper.dataset.messageId = message.id || '';
       const avatar = document.createElement('div');
       avatar.className = 'avatar';
       avatar.textContent = role === 'user' ? '我' : 'AI';
@@ -918,6 +952,9 @@
         bubble.insertAdjacentHTML('beforeend', role === 'assistant' ? markdownLite(content) : escapeHtml(content));
       }
 
+      if (role === 'assistant') {
+        bubble.appendChild(buildAssistantActions(message));
+      }
       if (meta) {
         bubble.appendChild(buildMeta(meta));
       }
@@ -999,9 +1036,81 @@
       return wrap;
     }
 
+    function createMessageId() {
+      return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function buildAssistantActions(message) {
+      const wrap = document.createElement('div');
+      wrap.className = 'message-actions';
+      const actions = [
+        ['forward', '转发'],
+        ['subscribe', '订阅'],
+        ['automation', '自动任务'],
+        ['reply', '回复']
+      ];
+      for (const [type, label] of actions) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'message-action-btn';
+        btn.textContent = label;
+        btn.onclick = () => type === 'reply' ? setReplyTarget(message.id) : openActionModal(type, message);
+        wrap.appendChild(btn);
+      }
+      return wrap;
+    }
+
+    function openActionModal(type, message) {
+      actionModalOverlay.classList.add('show');
+      actionModalOverlay.innerHTML = renderActionModal(type, message);
+      actionModalOverlay.querySelector('[data-close-modal]').onclick = closeActionModal;
+      actionModalOverlay.querySelector('[data-confirm-modal]').onclick = () => {
+        const target = actionModalOverlay.querySelector('.option-chip.selected[data-target]');
+        const success = actionModalOverlay.querySelector('.mock-success');
+        const targetText = target ? target.textContent : '默认目标';
+        success.textContent = type === 'forward'
+          ? `已模拟转发到 ${targetText}`
+          : type === 'subscribe'
+            ? `已创建模拟订阅，推送目标：${targetText}`
+            : `已创建模拟自动任务，后续将自动生成飞书文档报告`;
+      };
+      for (const btn of actionModalOverlay.querySelectorAll('.option-chip')) {
+        btn.onclick = () => {
+          const group = btn.dataset.group;
+          for (const item of actionModalOverlay.querySelectorAll(`.option-chip[data-group="${group}"]`)) item.classList.remove('selected');
+          btn.classList.add('selected');
+        };
+      }
+    }
+
+    function closeActionModal() {
+      actionModalOverlay.classList.remove('show');
+      actionModalOverlay.innerHTML = '';
+    }
+
+    function modalTitle(type) {
+      return type === 'forward' ? '转发到飞书' : type === 'subscribe' ? '订阅本次分析' : '自动生成飞书文档报告';
+    }
+
+    function renderTargetOptions() {
+      const users = mockLarkUsers.map((name, index) => `<button type="button" class="option-chip${index === 0 ? ' selected' : ''}" data-group="target" data-target="user">飞书人员：${escapeHtml(name)}</button>`).join('');
+      const groups = mockLarkGroups.map(name => `<button type="button" class="option-chip" data-group="target" data-target="group">飞书群：${escapeHtml(name)}</button>`).join('');
+      return users + groups;
+    }
+
+    function renderActionModal(type, message) {
+      const snippet = escapeHtml(getMessageSnippet(message));
+      const frequency = type === 'forward' ? '' : `<div class="form-row"><label>推送频率</label><div class="option-group"><button type="button" class="option-chip selected" data-group="freq">每天</button><button type="button" class="option-chip" data-group="freq">每周</button><button type="button" class="option-chip" data-group="freq">每月</button></div></div>`;
+      const contentType = type === 'subscribe' ? `<div class="form-row"><label>推送内容</label><div class="option-group"><button type="button" class="option-chip selected" data-group="content">文案</button><button type="button" class="option-chip" data-group="content">截图</button></div></div>` : '';
+      const desc = type === 'automation' ? '<p>系统将按设定频率自动基于当前分析主题生成飞书文档报告。</p>' : `<p>当前内容：${snippet || 'AI 回复内容'}</p>`;
+      const confirmText = type === 'forward' ? '确认转发' : type === 'subscribe' ? '创建订阅' : '创建自动任务';
+      return `<div class="action-modal"><div class="action-modal-header"><span class="action-modal-title">${modalTitle(type)}</span><button class="modal-btn" type="button" data-close-modal>关闭</button></div><div class="action-modal-body">${desc}${frequency}${contentType}<div class="form-row"><label>飞书目标</label><div class="option-group">${renderTargetOptions()}</div></div><div class="mock-success"></div></div><div class="action-modal-footer"><button class="modal-btn" type="button" data-close-modal>取消</button><button class="modal-btn primary" type="button" data-confirm-modal>${confirmText}</button></div></div>`;
+    }
+
     function getWelcomeMessage() {
       const content = '## 你好，我是销数通 AI Copilot\n你可以直接问我销售经营、客户投放、线索转化、ROI、余额、逾期应收等问题。';
       return {
+        id: createMessageId(),
         role: 'assistant',
         content,
         meta: {
@@ -1032,6 +1141,7 @@
         createdAt: now,
         updatedAt: now,
         history: [],
+        replyTargetMessageId: '',
         messages: [getWelcomeMessage()]
       };
     }
@@ -1089,9 +1199,10 @@
       [...messagesEl.querySelectorAll('.msg')].forEach(el => el.remove());
       const session = getCurrentSession();
       for (const message of session.messages) {
-        appendMessage(message.role, message.content, message.meta);
+        appendMessage(message);
       }
       renderSessionList();
+      renderReplyBanner();
     }
 
     function setCurrentSession(sessionId) {
@@ -1101,22 +1212,71 @@
       closeSidebarDrawer();
     }
 
+    function buildAssistantContext(meta) {
+      if (!meta) return null;
+      return {
+        intent: meta.intent,
+        skill: meta.skill,
+        reason: meta.reason,
+        columns: meta.columns,
+        rows: (meta.rows || []).slice(0, 30),
+        debug: meta.debug || {},
+        report: meta.report || null
+      };
+    }
+
+    function findMessageById(session, messageId) {
+      return (session.messages || []).find(message => message.id === messageId);
+    }
+
     function getLastAssistantContext(session) {
       for (let i = session.messages.length - 1; i >= 0; i--) {
         const message = session.messages[i];
-        if (message.role === 'assistant' && message.meta) {
-          return {
-            intent: message.meta.intent,
-            skill: message.meta.skill,
-            reason: message.meta.reason,
-            columns: message.meta.columns,
-            rows: (message.meta.rows || []).slice(0, 30),
-            debug: message.meta.debug || {},
-            report: message.meta.report || null
-          };
-        }
+        if (message.role === 'assistant' && message.meta) return buildAssistantContext(message.meta);
       }
       return null;
+    }
+
+    function getPreferredAssistantContext(session) {
+      const replyTarget = findMessageById(session, session.replyTargetMessageId);
+      if (replyTarget && replyTarget.role === 'assistant' && replyTarget.meta) return buildAssistantContext(replyTarget.meta);
+      return getLastAssistantContext(session);
+    }
+
+    function getMessageSnippet(message) {
+      if (!message) return '';
+      const firstBlock = message.meta && Array.isArray(message.meta.blocks) ? message.meta.blocks[0] : null;
+      const text = (firstBlock && (firstBlock.title || firstBlock.content)) || message.content || '';
+      return String(text).replace(/[#*_`\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 64);
+    }
+
+    function setReplyTarget(messageId) {
+      const session = getCurrentSession();
+      session.replyTargetMessageId = messageId;
+      saveSessions();
+      renderReplyBanner();
+      inputEl.focus();
+    }
+
+    function clearReplyTarget() {
+      const session = getCurrentSession();
+      session.replyTargetMessageId = '';
+      saveSessions();
+      renderReplyBanner();
+    }
+
+    function renderReplyBanner() {
+      const session = getCurrentSession();
+      const target = findMessageById(session, session.replyTargetMessageId);
+      if (!target) {
+        session.replyTargetMessageId = '';
+        replyBanner.classList.remove('show');
+        replyBanner.innerHTML = '';
+        return;
+      }
+      replyBanner.classList.add('show');
+      replyBanner.innerHTML = `<span class="reply-banner-text">回复 AI：${escapeHtml(getMessageSnippet(target))}</span><button class="reply-banner-close" type="button">取消</button>`;
+      replyBanner.querySelector('.reply-banner-close').onclick = clearReplyTarget;
     }
 
     function renameSessionFromFirstQuestion(session, text) {
@@ -1129,6 +1289,7 @@
       const session = createSession();
       appState.sessions.unshift(session);
       appState.currentSessionId = session.id;
+      session.replyTargetMessageId = '';
       saveSessions();
       renderCurrentSession();
       closeSidebarDrawer();
@@ -1138,6 +1299,7 @@
     function clearCurrentSession() {
       const session = getCurrentSession();
       session.history = [];
+      session.replyTargetMessageId = '';
       session.messages = [getWelcomeMessage()];
       session.updatedAt = Date.now();
       saveSessions();
@@ -1397,9 +1559,10 @@
       if (!text || sendBtn.disabled) return;
       const session = getCurrentSession();
       const sessionId = session.id;
-      const userMessage = { role: 'user', content: text, meta: null };
+      const userMessage = { id: createMessageId(), role: 'user', content: text, meta: null };
+      const requestContext = getPreferredAssistantContext(session);
       session.messages.push(userMessage);
-      appendMessage('user', text);
+      appendMessage(userMessage);
       renameSessionFromFirstQuestion(session, text);
       session.updatedAt = Date.now();
       inputEl.value = '';
@@ -1412,36 +1575,38 @@
         ? '正在理解问题并选择合适的销售分析技能...'
         : `正在使用「${getSkillLabel(selectedSkill)}」技能处理...`;
       const loading = appState.currentSessionId === sessionId
-        ? appendMessage('assistant', `<span class="typing">${escapeHtml(loadingText)}</span>`)
+        ? appendMessage({ id: createMessageId(), role: 'assistant', content: `<span class="typing">${escapeHtml(loadingText)}</span>`, meta: null })
         : null;
       try {
         const resp = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, history: session.history, skill: selectedSkill, context: getLastAssistantContext(session) })
+          body: JSON.stringify({ message: text, history: session.history, skill: selectedSkill, context: requestContext })
         });
         const data = await resp.json();
         if (loading) loading.remove();
         if (!resp.ok || data.error) throw new Error(data.error || '请求失败');
-        const assistantMessage = { role: 'assistant', content: data.answer, meta: data };
+        const assistantMessage = { id: createMessageId(), role: 'assistant', content: data.answer, meta: data };
         session.messages.push(assistantMessage);
         session.history.push({ role: 'user', content: text });
         session.history.push({ role: 'assistant', content: data.answer });
+        session.replyTargetMessageId = '';
         session.updatedAt = Date.now();
+        renderReplyBanner();
         saveSessions();
         renderSessionList();
         if (appState.currentSessionId === sessionId) {
-          appendMessage('assistant', data.answer, data);
+          appendMessage(assistantMessage);
         }
       } catch (err) {
         if (loading) loading.remove();
         const errorContent = `## 请求失败\n${err.message}\n\n请检查服务是否运行，以及 MiniMax API 环境变量是否配置正确。`;
-        session.messages.push({ role: 'assistant', content: errorContent, meta: null });
+        session.messages.push({ id: createMessageId(), role: 'assistant', content: errorContent, meta: null });
         session.updatedAt = Date.now();
         saveSessions();
         renderSessionList();
         if (appState.currentSessionId === sessionId) {
-          appendMessage('assistant', errorContent);
+          appendMessage({ id: createMessageId(), role: 'assistant', content: errorContent, meta: null });
         }
       } finally {
         sendBtn.disabled = false;
@@ -1478,10 +1643,13 @@
     newSessionBtn.onclick = newSession;
     clearBtn.onclick = clearCurrentSession;
     dataSourceCard.onclick = () => {
-      appendMessage('assistant', '## 数据源切换\n当前版本仅接入 `ads_auto_commercial_daily_wide`。后续可以在这里扩展更多数据源，用于不同方向的销售分析。');
+      appendMessage({ id: createMessageId(), role: 'assistant', content: '## 数据源切换\n当前版本仅接入 `ads_auto_commercial_daily_wide`。后续可以在这里扩展更多数据源，用于不同方向的销售分析。', meta: null });
     };
     sidebarToggleBtn.onclick = openSidebarDrawer;
     sidebarOverlay.onclick = closeSidebarDrawer;
+    actionModalOverlay.onclick = event => {
+      if (event.target === actionModalOverlay || event.target.hasAttribute('data-close-modal')) closeActionModal();
+    };
     inputEl.addEventListener('input', autoResize);
     inputEl.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
